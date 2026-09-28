@@ -1,0 +1,282 @@
+{
+  "project_status": "partially_functional",
+  "critical_findings": [
+    {
+      "id": "C01",
+      "component": "Ingestion",
+      "finding": "Polars Excel reader infers Invoice as Int64, converting cancellation invoices (C...) to null. 19,494 cancellation rows (1.8% of data) silently lost across both sheets.",
+      "impact": "All return/cancellation metrics invalid; net revenue calculations incomplete",
+      "severity": "P0"
+    },
+    {
+      "id": "C02",
+      "component": "Customer 360",
+      "finding": "40+ features use future information (lifetime_gross_revenue, last_purchase_date, recency_days, active_month_count, lifetime_orders, lifetime_return_value, product_affinity, has_reactivated)",
+      "impact": "Invalidates all downstream ML models trained on this feature mart for historical prediction",
+      "severity": "P0"
+    },
+    {
+      "id": "C03",
+      "component": "Churn/Next-Purchase",
+      "finding": "IndexError: target panel (92,679 rows) vs X_train/X_val/X_test (65,340/10,392/16,947 rows) - boolean mask length mismatch",
+      "impact": "Two pipeline stages completely non-functional",
+      "severity": "P0"
+    }
+  ],
+  "major_findings": [
+    {
+      "id": "M01",
+      "component": "Segmentation",
+      "finding": "Original review confused segment 0 (3,898 customers) with noise. Actual noise = segment -1 (977 customers = 16.6%), not 66.3%.",
+      "impact": "Invalidates segmentation conclusions in original review",
+      "severity": "P1"
+    },
+    {
+      "id": "M02",
+      "component": "Segmentation",
+      "finding": "Segment 5 (174 customers) has price_behavior = 23.85 in segment_profiles.csv (segment mean after RobustScaler+YeoJohnson, not PCA loading). Block balancing failed to equalize price_behavior block.",
+      "impact": "Price behavior dominates segment 5; segment may be outlier cluster",
+      "severity": "P1"
+    },
+    {
+      "id": "M03",
+      "component": "Cohorts",
+      "finding": "Net revenue retention > 100% for 2011-05 cohort at age 6 (328%) while logo retention = 26%. Original review incorrectly cited 2011-08 age 3 (88.9%) as >100%.",
+      "impact": "Methodologically concerning; retail NRR semantics need documentation",
+      "severity": "P1"
+    },
+    {
+      "id": "M04",
+      "component": "CLV",
+      "finding": "Methodology is discounted net revenue forecast, not probabilistic CLV (no margin, no BG/NBD, no Gamma-Gamma, no churn process). Labeled 'CLV' throughout.",
+      "impact": "Misleading for portfolio/employers; overstates capability",
+      "severity": "P1"
+    },
+    {
+      "id": "M05",
+      "component": "All Scripts",
+      "finding": "Transaction cleaning logic duplicated 5 times (80+ lines each); no shared library",
+      "impact": "Bug fixes require 5 edits; drift guaranteed over time",
+      "severity": "P1"
+    },
+    {
+      "id": "M06",
+      "component": "All Scripts",
+      "finding": "No requirements.txt/pyproject.toml; scikit-learn 1.3.2 incompatible with huber loss and QuantileTransformer(subsample=None)",
+      "impact": "Environment not reproducible; scripts fail without manual fixes",
+      "severity": "P1"
+    },
+    {
+      "id": "M07",
+      "component": "Segmentation",
+      "finding": "Silhouette 0.990 is unusually high for behavioral data; stability not tested (bootstrap=0); selected params optimize internal quality metric only",
+      "impact": "No evidence segments are robust to sampling variation",
+      "severity": "P1"
+    }
+  ],
+  "moderate_findings": [
+    {
+      "id": "MO01",
+      "component": "CLV",
+      "finding": "Monte Carlo simulation uses Python loops (customers x paths x months) - not vectorized; full run estimated 15+ minutes",
+      "impact": "Not interactive; limits experimentation",
+      "severity": "P2"
+    },
+    {
+      "id": "MO02",
+      "component": "Segmentation",
+      "finding": "HDBSCAN candidate evaluation sequential (10 configs); no parallelization",
+      "impact": "Model selection slower than necessary",
+      "severity": "P2"
+    },
+    {
+      "id": "MO03",
+      "component": "Dashboard",
+      "finding": "File discovery uses recursive glob with hardcoded patterns; brittle to directory structure",
+      "impact": "Dashboard breaks if output directories renamed",
+      "severity": "P2"
+    },
+    {
+      "id": "MO04",
+      "component": "CLV",
+      "finding": "CLV output shows segment_name but segment_confidence often 0 or 1e-8 (no confidence calibration)",
+      "impact": "Segment-CLV integration not meaningful",
+      "severity": "P2"
+    },
+    {
+      "id": "MO05",
+      "component": "Churn/Next-Purchase",
+      "finding": "Next-purchase target construction uses O(n x m x h) Python loop over customers x months x horizons",
+      "impact": "Slow; prevents quick iteration",
+      "severity": "P2"
+    }
+  ],
+  "minor_findings": [
+    {
+      "id": "MI01",
+      "component": "Dashboard",
+      "finding": "Cohort heatmaps show NaN for immature cohorts (blank cells); no visual indication",
+      "impact": "Minor UX confusion",
+      "severity": "P3"
+    },
+    {
+      "id": "MI02",
+      "component": "Dashboard",
+      "finding": "Segment PCA colored by segment_name including 'Noise / low-density' (66% of points dominates visualization)",
+      "impact": "Visual clutter; noise should be separable",
+      "severity": "P3"
+    },
+    {
+      "id": "MI03",
+      "component": "Customer 360",
+      "finding": "Product affinity features (top 10 products) computed on full history, not prediction-time available",
+      "impact": "Leakage already captured in C02; this is specific instance",
+      "severity": "P3"
+    },
+    {
+      "id": "MI04",
+      "component": "All Scripts",
+      "finding": "Multiple matplotlib installations cause 3D projection warning (harmless but noisy)",
+      "impact": "Log noise",
+      "severity": "P3"
+    },
+    {
+      "id": "MI05",
+      "component": "Segmentation",
+      "finding": "Segment names auto-generated (Segment_XX); no business interpretation provided",
+      "impact": "Reduces portfolio narrative value",
+      "severity": "P3"
+    }
+  ],
+  "dataset": {
+    "source": "/home/lptop/Documents/coding/marketing_science/data_xslx/online_retail_II.xlsx",
+    "sheets": 2,
+    "raw_rows_combined": 1067371,
+    "rows_per_sheet": 525461,
+    "clean_rows": 805620,
+    "clean_sale_lines": 805549,
+    "unique_customers_with_id": 5942,
+    "missing_customer_id_pct": 22.8,
+    "unique_products": 4632,
+    "unique_invoices": 24222,
+    "date_range": "2009-12-01 to 2011-12-09",
+    "gross_revenue": 10169713.57,
+    "returns_value": 630228.94,
+    "net_revenue": 9539484.63,
+    "duplication_factor": 1.0,
+    "negative_quantity_rows": 12326,
+    "zero_negative_price_rows": 3690,
+    "duplicate_full_rows": 6865,
+    "cancellation_invoices": 19494,
+    "cancellation_detection": "ONLY works with pandas read_excel(dtype={'Invoice': str}) or Polars read_csv with schema_overrides; Polars read_excel silently converts to null"
+  },
+  "segmentation": {
+    "algorithm": "HDBSCAN",
+    "params": {"min_cluster_size": 59, "min_samples": 59},
+    "n_clusters": 12,
+    "coverage": 0.834,
+    "noise_share": 0.166,
+    "silhouette": 0.990,
+    "davies_bouldin": 0.086,
+    "mean_probability": 0.895,
+    "stability_ari": "NOT_COMPUTED",
+    "largest_segment": {"name": "Segment 0", "customers": 3898, "share": 0.663},
+    "noise_segment": {"label": -1, "customers": 977, "share": 0.166},
+    "block_balancing_failed": true,
+    "dominant_block": "price_behavior",
+    "segment_5_price_behavior_mean": 23.85,
+    "note": "23.85 is segment feature mean in segment_profiles.csv (after RobustScaler+YeoJohnson, before block balancing), NOT a PCA loading"
+  },
+  "cohort": {
+    "n_cohorts": 25,
+    "cohort_range": "2009-12 to 2011-12",
+    "min_cohort_size": 9,
+    "max_cohort_size": 70,
+    "logo_retention_month_3_range": [0.09, 0.43],
+    "logo_retention_month_6_range": [0.05, 0.38],
+    "net_revenue_retention_exceeds_100": true,
+    "anomalous_cohorts": ["2011-05 age 6: NRR=328%, logo=26%"],
+    "maturity_censoring_in_scorecard": true,
+    "independent_recalc_match": true,
+    "note": "Original review incorrectly cited 2011-08 age 3 (88.9%) as >100%. Actual >100% case is 2011-05 age 6 (328%)."
+  },
+  "clv": {
+    "methodology": "discounted_net_revenue_forecast",
+    "is_probabilistic_clv": false,
+    "prediction_origin": "2011-11-01",
+    "horizon_months": 12,
+    "simulations": 50,
+    "purchase_model_roc_auc": 0.814,
+    "purchase_model_pr_auc": 0.564,
+    "purchase_model_brier": 0.113,
+    "spend_model_mae": "~180",
+    "spend_model_rmse": "~290",
+    "empirical_bayes_prior": {"alpha": 0.298, "beta": 11.702, "mean": 0.025},
+    "discount_rate_annual": 0.10,
+    "margin_proxy": 1.0,
+    "mean_clv_1000_cust": 1971.69,
+    "uncertainty_calibrated": false,
+    "leakage_safe": true,
+    "note": "Better label: 'Dynamic probabilistic discounted net-revenue CLV proxy'. --margin-rate flag allows contribution CLV conversion."
+  },
+  "churn": {
+    "status": "BROKEN",
+    "error": "IndexError: boolean index did not match indexed array along dimension 0; dimension is 65340 but corresponding boolean dimension is 92679",
+    "methodology": "discrete_time_hazard + next_purchase",
+    "temporal_split": "train/val(2mo)/test(3mo)",
+    "leakage_prevention": "correct_in_code",
+    "metrics_computed": "NOT_VERIFIED"
+  },
+  "next_purchase": {
+    "status": "BROKEN",
+    "error": "Same as churn (same script)",
+    "horizons": [7, 30, 60],
+    "target_definition": "next invoice within N days of month end",
+    "baseline_comparison": "NOT_RUN"
+  },
+  "decision_engine": {
+    "status": "NOT_IMPLEMENTED",
+    "dashboard_status": "PENDING",
+    "outputs_generated": false
+  },
+  "application": {
+    "startup": "SUCCESS",
+    "pages_tested": 8,
+    "pages_functional": 6,
+    "pages_pending": 2,
+    "visual_issues": 4,
+    "data_reconciliation": "MATCHES",
+    "ux_issues": 4
+  },
+  "reproducibility": {
+    "random_seeds": "SEED=42 set in all scripts",
+    "polars_deterministic": true,
+    "sklearn_random_state": true,
+    "non_determinism_sources": ["Polars->Pandas conversions", "HDBSCAN n_jobs=-1", "ParameterGrid ordering"],
+    "full_pipeline_rerun": "NOT_TESTED",
+    "requirements_locked": false
+  },
+  "performance": {
+    "data_loading_s": 15,
+    "cleaning_s": 2,
+    "customer_360_s": 8,
+    "segmentation_features_s": 3,
+    "segmentation_hdbscan_s": 12,
+    "cohorts_s": 15,
+    "clv_1000cust_50sim_s": 60,
+    "clv_full_est_min": 15,
+    "dashboard_startup_s": 3
+  },
+  "claim_audit": [
+    {"claim": "Customer 360 is a reusable feature mart for downstream ML", "status": "PARTIALLY_SUPPORTED", "risk": "40+ leaky features for historical prediction; valid as descriptive current-state mart"},
+    {"claim": "Behavioral segmentation captures multi-dimensional behavior", "status": "PARTIALLY_SUPPORTED", "risk": "16.6% noise (not 66%), silhouette 0.99 implausible, block balancing failed"},
+    {"claim": "Cohort analysis separates acquisition quality from age", "status": "SUPPORTED", "risk": "Maturity censoring in scorecard; NRR > 100% for 2011-05 age 6"},
+    {"claim": "CLV combines expected future economics with uncertainty", "status": "PARTIALLY_SUPPORTED", "risk": "Revenue forecast, not CLV; uncertainty uncalibrated; leakage-safe"},
+    {"claim": "Churn/survival model with discrete-time hazard", "status": "UNAVAILABLE", "risk": "Script broken"},
+    {"claim": "Next-purchase models for 7/30/60 days", "status": "UNAVAILABLE", "risk": "Script broken"},
+    {"claim": "Decision engine with next-best-action", "status": "NOT_SUPPORTED", "risk": "Not implemented"},
+    {"claim": "Pipeline is leakage-safe", "status": "PARTIALLY_SUPPORTED", "risk": "Customer 360 leaks for historical prediction; Segmentation/Cohorts use full history"},
+    {"claim": "Stable, robust segments", "status": "NOT_SUPPORTED", "risk": "Stability not tested"},
+    {"claim": "Model cards provide transparency", "status": "PARTIALLY_SUPPORTED", "risk": "Metrics not independently reproducible"}
+  ]
+}

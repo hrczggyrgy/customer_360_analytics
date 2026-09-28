@@ -1,0 +1,75 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Output directories (generated)
+*_output/
+online_retail_segmentation/
+cohort_analysis_output/
+clv_analysis_output/
+churn_next_purchase_output/
+customer_360_output/
+xlsx_output/
+full_output/
+test_output/
+
+# Model artifacts
+*.pkl
+*.joblib
+*.model
+model_cards/
+
+# Data
+data_xslx/*.xlsx
+data_xslx/*.csv
+data_xslx/*.parquet
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Streamlit
+.streamlit/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Distribution
+dist/
+build/
+*.egg-info/
+
+# Environment
+.env
+.env.local
+
+# Cache
+.cache/
+.codegraph/
+.omo/
