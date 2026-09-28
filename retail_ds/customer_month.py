@@ -252,6 +252,22 @@ def build_customer_month_panel(
     )
 
     # -------------------------------------------------------------------------
+    # Consecutive inactive months (for reactivation modeling)
+    # -------------------------------------------------------------------------
+    dense = dense.with_columns(
+        pl.when(pl.col("active") == 1).then(0).otherwise(1).alias("inactive_indicator")
+    )
+    dense = dense.with_columns(
+        pl.col("inactive_indicator").cum_sum().over("Customer ID").alias("inactive_run_counter")
+    )
+    dense = dense.with_columns(
+        pl.when(pl.col("active") == 1).then(pl.col("inactive_run_counter")).forward_fill().over("Customer ID").alias("last_active_counter")
+    )
+    dense = dense.with_columns(
+        (pl.col("inactive_run_counter") - pl.col("last_active_counter").fill_null(0)).alias("consecutive_inactive_months")
+    )
+
+    # -------------------------------------------------------------------------
     # Lagged features
     # -------------------------------------------------------------------------
     for lag in (1, 2, 3):
@@ -320,6 +336,27 @@ def build_customer_month_panel(
             pl.col("active").shift(-1).over("Customer ID").alias("next_active"),
             pl.col("net_revenue").shift(-1).over("Customer ID").alias("next_net_revenue"),
             pl.col("calendar_month").shift(-1).over("Customer ID").alias("next_calendar_month"),
+        ]
+    )
+
+    # Monthly state transitions (for reactivation modeling)
+    dense = dense.with_columns(
+        [
+            pl.col("active").shift(1).over("Customer ID").fill_null(0).alias("prev_month_active"),
+            pl.col("active").shift(2).over("Customer ID").fill_null(0).alias("two_months_ago_active"),
+        ]
+    ).with_columns(
+        [
+            pl.when(
+                (pl.col("active") == 1)
+                & (pl.col("prev_month_active") == 0)
+                & (pl.col("age_month") > 1)
+            ).then(1).otherwise(0).alias("reactivation_event"),
+
+            pl.when(
+                (pl.col("active") == 0)
+                & (pl.col("prev_month_active") == 1)
+            ).then(1).otherwise(0).alias("churn_transition"),
         ]
     )
 

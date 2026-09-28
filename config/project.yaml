@@ -1,0 +1,93 @@
+# Retail Intelligence Project Configuration
+
+# Data paths
+data:
+  raw:
+    online_retail_ii: "data_xslx/online_retail_II.xlsx"
+  processed:
+    canonical_transactions: "data_quality_output/canonical_transactions.parquet"
+    customer_month: "data_quality_output/customer_month.parquet"
+
+# Output directories
+outputs:
+  data_quality: "data_quality_output"
+  customer_360: "customer_360_output"
+  segmentation: "online_retail_segmentation"
+  cohorts: "cohort_analysis_output"
+  clv: "clv_analysis_output"
+  churn: "churn_next_purchase_output"
+  reactivation: "reactivation_output"
+  product_analytics: "product_analytics_output"
+  recommendations: "recommendation_output"
+  decision_engine: "decision_engine_output"
+
+# Model parameters
+model:
+  seed: 42
+  # Segmentation
+  segmentation:
+    min_customers: 150
+    pca_variance: 0.90
+    max_pca_components: 12
+    stability_repeats: 10
+    hdbscan_min_cluster_size: 59
+    hdbscan_min_samples: 59
+  
+  # CLV
+  clv:
+    horizon_months: 24
+    simulations: 200
+    annual_discount_rate: 0.10
+    margin_rate: 1.0
+    validation_months: 3
+    min_active_history_months: 2
+    margin_scenarios: [0.1, 0.2, 0.3, 0.4]
+  
+  # Churn / Next Purchase
+  churn:
+    test_months: 3
+    validation_months: 2
+    horizon_months: 12
+    bootstrap: 2
+    windows: [1, 3, 6, 12]
+  
+  # Reactivation
+  reactivation:
+    horizon_months: 3
+    inactive_threshold_months: 3
+    validation_months: 2
+  
+  # Product Analytics
+  product_analytics:
+    min_sales: 10
+    co_purchase_min_support: 3
+    max_pairs_per_invoice: 50
+  
+  # Recommendations
+  recommendations:
+    top_k: 10
+    min_support: 3
+  
+  # Decision Engine
+  decision_engine:
+    capacity_total: 1000
+    capacity_reactivate: 300
+    capacity_accelerate: 400
+    capacity_cross_sell: 300
+    capacity_nurture: 500
+    confidence_threshold: 0.5
+
+# Dashboard settings
+dashboard:
+  port: 8501
+  headless: false
+  theme:
+    primary_color: "#315efb"
+    background_color: "#fbfcfe"
+    secondary_background_color: "#f7f8fa"
+    text_color: "#172033"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s | %(levelname)s | %(message)s"
