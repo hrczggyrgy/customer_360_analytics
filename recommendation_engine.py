@@ -5,14 +5,16 @@ Recommendation Engine — Product Co-Purchase Based Recommendations (Vectorized)
 This script builds customer-specific product recommendations using:
 1. Product co-purchase relationships (from product_analytics)
 2. Customer purchase history
-3. Customer segment affinity
-4. Product popularity
+3. Product popularity (from transactional history)
+4. Normalized co-purchase affinity as lift proxy
 
 Fully vectorized using Polars joins and aggregations — no per-customer loops.
 
-Output: Customer ID, recommended_product, score, reason, support, lift
+Output contract (matching Streamlit dashboard expectations):
+    Customer ID, recommended_product, score, reason, support, lift
 
-Uses the retail_ds shared package for canonical data processing.
+Additional diagnostic columns preserved:
+    co_purchase_score, popularity_score, Description, product_role, avg_price, total_revenue
 """
 
 from __future__ import annotations
@@ -21,7 +23,6 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Tuple
 
 import numpy as np
 import polars as pl
@@ -53,12 +54,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default="./recommendation_output", help="Output directory.")
     parser.add_argument("--sheet", default=None, help="Optional Excel sheet name.")
     parser.add_argument("--co-purchase-file", default="./product_analytics_output/co_purchase_matrix.parquet", help="Co-purchase matrix from product_analytics.")
-    parser.add_argument("--segments-file", default="./online_retail_segmentation/customer_segments.parquet", help="Customer segments file.")
     parser.add_argument("--top-k", type=int, default=10, help="Top K recommendations per customer.")
     parser.add_argument("--min-support", type=int, default=3, help="Minimum co-purchase support.")
     parser.add_argument("--max-partners", type=int, default=20, help="Max co-purchase partners per product.")
+    parser.add_argument("--fallback-pool", type=int, default=200, help="Popularity fallback candidate pool size.")
     parser.add_argument("--skip-plots", action="store_true", help="Skip plot generation.")
-    return parser.parse_args()
+    
+    args = parser.parse_args()
+    
+    # Validate arguments
+    if args.top_k < 1:
+        parser.error("--top-k must be >= 1")
+    if args.max_partners < 1:
+        parser.error("--max-partners must be >= 1")
+    if args.min_support < 1:
+        parser.error("--min-support must be >= 1")
+    if args.fallback_pool < 1:
+        parser.error("--fallback-pool must be >= 1")
+    
+    return args
 
 
 def build_customer_history(tx: pl.DataFrame) -> pl.DataFrame:
@@ -108,31 +122,27 @@ def load_co_purchase_matrix(co_purchase_path: Path, min_support: int, max_partne
         .head(max_partners)
     )
 
-    LOGGER.info(f"Loaded co-purchase matrix (top {max_partners} per product): {co_purchase.height:,} pairs")
+    LOGGER.info(f"Loaded co-purchase matrix (top {max_partners} per product, min_support={min_support}): {co_purchase.height:,} pairs")
     return co_purchase
 
 
-def load_customer_segments(segments_path: Path) -> pl.DataFrame:
-    """Load customer segments if available."""
-    LOGGER.info(f"Loading customer segments from {segments_path}")
-
-    if not segments_path.exists():
-        LOGGER.warning(f"Segments file not found: {segments_path}")
-        return pl.DataFrame(schema={"Customer ID": pl.Int64, "segment": pl.Int64})
-
-    segments = pl.read_parquet(segments_path)
-    keep_cols = ["Customer ID"]
-    for col in ["segment", "segment_name", "segment_confidence"]:
-        if col in segments.columns:
-            keep_cols.append(col)
-    return segments.select(keep_cols).unique(subset=["Customer ID"])
+def normalize_recommendation_schema(df: pl.DataFrame) -> pl.DataFrame:
+    """Ensure both co-purchase and fallback branches have identical schema for vertical concat."""
+    return df.with_columns(
+        pl.col("co_purchase_score").cast(pl.Float64),
+        pl.col("supporting_products").cast(pl.Int64),
+        pl.col("lift").cast(pl.Float64),
+        pl.col("popularity_score").cast(pl.Float64),
+        pl.col("final_score").cast(pl.Float64),
+        pl.col("reason").cast(pl.Utf8),
+    )
 
 
 def generate_recommendations_vectorized(
     customer_product: pl.DataFrame,
     co_purchase: pl.DataFrame,  # Already filtered to top-N per product
-    customer_segments: pl.DataFrame,
     top_k: int = 10,
+    fallback_pool_size: int = 200,
 ) -> pl.DataFrame:
     """
     Generate recommendations for all customers using fully vectorized Polars operations.
@@ -140,11 +150,17 @@ def generate_recommendations_vectorized(
     Strategy:
     1. Co-purchase matrix already filtered to top-N partners per product
     2. Join customer purchases with co-purchase matrix to get candidate products per customer
-    3. Aggregate co-purchase scores per customer-product
-    4. Add popularity fallback (computed from same filtered co-purchase)
-    5. Rank and select top-K per customer
+    3. Aggregate co-purchase features per customer-product
+    4. Compute product popularity from transactional history
+    5. Normalize and blend scores
+    6. Rank and select top-K per customer (deterministic)
     """
     LOGGER.info("Generating recommendations (fully vectorized)...")
+
+    # Handle empty co-purchase matrix
+    if co_purchase.is_empty():
+        LOGGER.warning("No co-purchase pairs remain after filtering. Generating popularity-only recommendations.")
+        return generate_popularity_only_recommendations(customer_product, top_k)
 
     # Get all unique customers and customer purchase history
     all_customers = customer_product.select("Customer ID").unique()
@@ -163,6 +179,8 @@ def generate_recommendations_vectorized(
     LOGGER.info(f"Customer-candidate pairs: {customer_candidates.height:,}")
 
     # Filter out products the customer already bought
+    # customer_bought has columns: Customer ID, StockCode
+    # Rename StockCode to recommended_product for the anti join
     customer_candidates = customer_candidates.join(
         customer_bought.rename({"StockCode": "recommended_product"}),
         on=["Customer ID", "recommended_product"],
@@ -170,7 +188,7 @@ def generate_recommendations_vectorized(
     )
     LOGGER.info(f"After removing already-bought: {customer_candidates.height:,}")
 
-    # Aggregate co-purchase scores per customer-product
+    # Aggregate co-purchase features per customer-product
     customer_scores = (
         customer_candidates.group_by(["Customer ID", "recommended_product"])
         .agg(
@@ -179,28 +197,36 @@ def generate_recommendations_vectorized(
         )
     )
 
-    # Add lift (normalize by customer's number of purchased products)
-    n_products_per_customer = (
-        customer_product.group_by("Customer ID").len()
-        .rename({"len": "n_products_bought"})
-    )
-    customer_scores = customer_scores.join(n_products_per_customer, on="Customer ID", how="left")
+    # Compute lift proxy: normalized affinity
+    # lift = co_purchase_score / (supporting_products * avg_support_per_product)
+    # This is a proxy for association-rule lift, not true lift
+    total_coocc = co_purchase.select(pl.col("cooccurrence").sum()).item()
+    n_unique_products = co_purchase.select("product_a").n_unique()
+    avg_support = total_coocc / n_unique_products
     customer_scores = customer_scores.with_columns(
-        (pl.col("co_purchase_score") / pl.col("n_products_bought")).alias("lift"),
-    ).drop("n_products_bought")
-
-    # Get product popularity (for fallback) - from the SAME filtered co_purchase matrix
-    LOGGER.info("Computing product popularity fallback...")
-    product_popularity = (
-        co_purchase.group_by("product_b")
-        .agg(pl.col("cooccurrence").sum().alias("total_cooccurrence"))
-        .rename({"product_b": "StockCode"})
-        .sort("total_cooccurrence", descending=True)
+        (pl.col("co_purchase_score") / (pl.col("supporting_products") * avg_support)).alias("lift"),
     )
-    max_pop = product_popularity.select(pl.col("total_cooccurrence").max()).item()
+
+    # Product popularity from TRANSACTIONAL HISTORY (not filtered co-purchase)
+    LOGGER.info("Computing product popularity from transactional history...")
+    product_popularity = (
+        customer_product
+        .group_by("StockCode")
+        .agg(
+            pl.col("purchase_count").sum().alias("product_invoice_count"),
+            pl.col("Customer ID").n_unique().alias("unique_customers"),
+            pl.col("total_revenue").sum().alias("product_total_revenue"),
+        )
+        .sort("unique_customers", descending=True)
+    )
+    
+    # Normalize popularity
+    max_pop = product_popularity.select(pl.col("unique_customers").max()).item()
     product_popularity = product_popularity.with_columns(
-        (pl.col("total_cooccurrence") / max_pop).alias("popularity_score"),
-    ).select(["StockCode", "popularity_score"])
+        (pl.col("unique_customers") / max_pop).alias("popularity_score"),
+    )
+    # Keep only columns needed for the join and downstream
+    product_popularity_for_join = product_popularity.select(["StockCode", "popularity_score"])
 
     # For customers WITH co-purchase scores, merge with popularity
     LOGGER.info("Merging co-purchase scores with popularity...")
@@ -209,17 +235,27 @@ def generate_recommendations_vectorized(
     # that corrupts co_purchase_score column type
     recommendations_with_cp = (
         customer_scores
-        .join(product_popularity, left_on="recommended_product", right_on="StockCode", how="left")
+        .join(product_popularity_for_join, left_on="recommended_product", right_on="StockCode", how="left")
         .with_columns(
             pl.when(pl.col("popularity_score").is_null())
             .then(0.0)
             .otherwise(pl.col("popularity_score"))
             .alias("popularity_score")
         )
-        .with_columns(
-            (pl.lit(0.7) * pl.col("co_purchase_score").cast(pl.Float64) + pl.lit(0.3) * pl.col("popularity_score")).alias("final_score"),
-            pl.lit("co_purchase").alias("reason"),
-        )
+    )
+    
+    # Normalize co_purchase_score per customer to [0, 1] before blending
+    recommendations_with_cp = recommendations_with_cp.with_columns(
+        (pl.col("co_purchase_score") / pl.col("co_purchase_score").max().over("Customer ID"))
+        .fill_nan(0.0)
+        .alias("co_purchase_score_norm")
+    )
+    
+    # Blend normalized scores: 70% co-purchase affinity, 30% popularity
+    recommendations_with_cp = recommendations_with_cp.with_columns(
+        (pl.lit(0.7) * pl.col("co_purchase_score_norm") + pl.lit(0.3) * pl.col("popularity_score"))
+        .alias("final_score"),
+        pl.lit("co_purchase").alias("reason"),
     )
 
     # For customers WITHOUT co-purchase scores, use pure popularity
@@ -230,10 +266,12 @@ def generate_recommendations_vectorized(
     
     if customers_without_cp:
         LOGGER.info(f"Generating popularity fallback for {len(customers_without_cp)} customers...")
-        # Create popularity-based recommendations for these customers
+        # Use bounded fallback pool for efficiency
+        popular_products = product_popularity.select(["StockCode", "popularity_score"]).head(fallback_pool_size)
+        
         pop_candidates = (
             pl.DataFrame({"Customer ID": customers_without_cp})
-            .join(product_popularity, how="cross")
+            .join(popular_products, how="cross")
             .rename({"StockCode": "recommended_product"})
         )
         
@@ -246,31 +284,144 @@ def generate_recommendations_vectorized(
             )
         
         recommendations_fallback = pop_candidates.with_columns(
-            pl.lit(0).cast(pl.UInt64).alias("co_purchase_score"),
+            pl.lit(0.0).alias("co_purchase_score"),
             pl.lit(0).cast(pl.UInt64).alias("supporting_products"),
             pl.lit(1.0).alias("lift"),
+            pl.lit(0.0).alias("co_purchase_score_norm"),
             pl.col("popularity_score").alias("final_score"),
             pl.lit("popularity").alias("reason"),
-        ).select(recommendations_with_cp.columns)
+        ).select([
+            "Customer ID", "recommended_product", 
+            "co_purchase_score", "supporting_products", "lift", 
+            "co_purchase_score_norm", "popularity_score", "final_score", "reason"
+        ])
     else:
         recommendations_fallback = pl.DataFrame(schema=recommendations_with_cp.schema)
 
-    # Combine and rank top-K per customer
+    # Normalize both branches to identical schema before concat
+    # First, drop extra columns from recommendations_with_cp (co_purchase_score_norm will be dropped in final select anyway)
+    # We only need columns that both branches have for concat
+    common_columns = [
+        "Customer ID", "recommended_product",
+        "co_purchase_score", "supporting_products", "lift",
+        "co_purchase_score_norm", "popularity_score", "final_score", "reason"
+    ]
+    recommendations_with_cp = recommendations_with_cp.select(common_columns)
+    recommendations_fallback = recommendations_fallback.select(common_columns)
+
+    # Normalize schema
+    recommendations_with_cp = normalize_recommendation_schema(recommendations_with_cp)
+    recommendations_fallback = normalize_recommendation_schema(recommendations_fallback)
+
+    # Combine and rank top-K per customer (DETERMINISTIC: sort by score then product code)
     LOGGER.info("Ranking top-K recommendations per customer...")
     all_recommendations = pl.concat([recommendations_with_cp, recommendations_fallback], how="vertical")
     
-    # Rank by final_score within each customer
+    # Sort first for deterministic tie-breaking
+    all_recommendations = all_recommendations.sort(
+        ["Customer ID", "final_score", "recommended_product"],
+        descending=[False, True, False]
+    )
+    
     top_recommendations = (
         all_recommendations
         .with_columns(
-            pl.col("final_score").rank(method="ordinal", descending=True).over("Customer ID").alias("rank")
+            pl.col("final_score")
+            .rank(method="ordinal", descending=True)
+            .over("Customer ID")
+            .alias("rank")
         )
         .filter(pl.col("rank") <= top_k)
         .drop("rank")
-        .sort(["Customer ID", "final_score"], descending=[False, True])
+        # Output contract matching Streamlit dashboard
+        .select(
+            "Customer ID",
+            "recommended_product",
+            pl.col("final_score").alias("score"),
+            "reason",
+            pl.col("supporting_products").alias("support"),
+            "lift",
+            "co_purchase_score",
+            "popularity_score",
+        )
     )
 
     LOGGER.info(f"Generated {top_recommendations.height:,} recommendations for {top_recommendations.select('Customer ID').n_unique()} customers")
+    return top_recommendations
+
+
+def generate_popularity_only_recommendations(
+    customer_product: pl.DataFrame,
+    top_k: int,
+) -> pl.DataFrame:
+    """Generate recommendations using only product popularity when no co-purchase data exists."""
+    LOGGER.info("Generating popularity-only recommendations...")
+    
+    # Product popularity from transactional history
+    product_popularity = (
+        customer_product
+        .group_by("StockCode")
+        .agg(
+            pl.col("purchase_count").sum().alias("product_invoice_count"),
+            pl.col("Customer ID").n_unique().alias("unique_customers"),
+        )
+        .sort("unique_customers", descending=True)
+    )
+    
+    max_pop = product_popularity.select(pl.col("unique_customers").max()).item()
+    product_popularity = product_popularity.with_columns(
+        (pl.col("unique_customers") / max_pop).alias("popularity_score"),
+    ).select(["StockCode", "popularity_score"])
+    
+    all_customers = customer_product.select("Customer ID").unique()
+    customer_bought = customer_product.select(["Customer ID", "StockCode"]).unique()
+    
+    # Cross join with all popular products
+    pop_candidates = all_customers.join(product_popularity, how="cross").rename({"StockCode": "recommended_product"})
+    
+    # Filter out already-bought
+    pop_candidates = pop_candidates.join(
+        customer_bought.rename({"StockCode": "recommended_product"}),
+        on=["Customer ID", "recommended_product"],
+        how="anti"
+    )
+    
+    recommendations = pop_candidates.with_columns(
+        pl.lit(0.0).alias("co_purchase_score"),
+        pl.lit(0).cast(pl.UInt64).alias("supporting_products"),
+        pl.lit(1.0).alias("lift"),
+        pl.col("popularity_score").alias("final_score"),
+        pl.lit("popularity").alias("reason"),
+    )
+    
+    # Deterministic ranking
+    recommendations = recommendations.sort(
+        ["Customer ID", "final_score", "recommended_product"],
+        descending=[False, True, False]
+    )
+    
+    top_recommendations = (
+        recommendations
+        .with_columns(
+            pl.col("final_score")
+            .rank(method="ordinal", descending=True)
+            .over("Customer ID")
+            .alias("rank")
+        )
+        .filter(pl.col("rank") <= top_k)
+        .drop("rank")
+        .select(
+            "Customer ID",
+            "recommended_product",
+            pl.col("final_score").alias("score"),
+            "reason",
+            pl.col("supporting_products").alias("support"),
+            "lift",
+            "co_purchase_score",
+            "popularity_score",
+        )
+    )
+    
     return top_recommendations
 
 
@@ -307,7 +458,7 @@ def save_plots(
 
     # Score distribution
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.hist(recs_pd["final_score"], bins=30, alpha=0.8, edgecolor='white')
+    ax.hist(recs_pd["score"], bins=30, alpha=0.8, edgecolor='white')
     ax.set_xlabel("Recommendation Score")
     ax.set_ylabel("Count")
     ax.set_title("Distribution of Recommendation Scores")
@@ -329,7 +480,7 @@ def save_plots(
     fig, ax = plt.subplots(figsize=(10, 6))
     for reason in recs_pd["reason"].unique():
         subset = recs_pd[recs_pd["reason"] == reason]
-        ax.hist(subset["final_score"], bins=20, alpha=0.5, label=reason, density=True)
+        ax.hist(subset["score"], bins=20, alpha=0.5, label=reason, density=True)
     ax.set_xlabel("Score")
     ax.set_ylabel("Density")
     ax.set_title("Score Distribution by Recommendation Reason")
@@ -355,7 +506,6 @@ def main() -> None:
     input_path = Path(args.input).expanduser().resolve()
     output_dir = Path(args.output_dir).expanduser().resolve()
     co_purchase_path = Path(args.co_purchase_file).expanduser().resolve()
-    segments_path = Path(args.segments_file).expanduser().resolve()
     product_metrics_path = Path("./product_analytics_output/product_metrics.parquet")
 
     if not input_path.exists():
@@ -380,9 +530,6 @@ def main() -> None:
     # Load co-purchase matrix (top-N per product)
     co_purchase = load_co_purchase_matrix(co_purchase_path, args.min_support, args.max_partners)
 
-    # Load customer segments (optional)
-    customer_segments = load_customer_segments(segments_path)
-
     # Build customer purchase history
     customer_product = build_customer_history(tx)
 
@@ -390,8 +537,8 @@ def main() -> None:
     recommendations = generate_recommendations_vectorized(
         customer_product=customer_product,
         co_purchase=co_purchase,
-        customer_segments=customer_segments,
         top_k=args.top_k,
+        fallback_pool_size=args.fallback_pool,
     )
 
     # Enrich with product details
@@ -402,21 +549,29 @@ def main() -> None:
     recommendations.write_parquet(output_dir / "recommendations.parquet")
     recommendations.write_csv(output_dir / "recommendations.csv")
 
-    # Model card
+    # Model card - honest about what this is
     with open(output_dir / "model_card.json", "w") as f:
         json.dump({
-            "model_name": "Co-Purchase Based Recommendation Engine (Fully Vectorized)",
+            "model_name": "Co-Purchase Based Recommendation Engine (Vectorized)",
             "methodology": "Pre-computed product affinity (top-20 per product) + popularity fallback via Polars joins",
             "top_k": args.top_k,
             "min_support": args.min_support,
             "max_partners_per_product": args.max_partners,
+            "fallback_pool_size": args.fallback_pool,
             "n_customers": recommendations.select("Customer ID").n_unique(),
             "n_recommendations": recommendations.height,
             "avg_recommendations_per_customer": recommendations.height / recommendations.select("Customer ID").n_unique(),
             "reason_distribution": recommendations.group_by("reason").len().to_dicts(),
+            "limitations": [
+                "Observational co-purchase only - no causal recommendation effect",
+                "No explicit segment affinity (segment feature loaded but not used)",
+                "Lift is normalized affinity proxy, not true association-rule lift",
+                "Popularity fallback based on bounded candidate pool",
+                "No temporal holdout validation - offline metrics not computed",
+            ],
         }, f, indent=2, default=str)
 
-    # Feature importance (placeholder)
+    # Feature importance (placeholder - not applicable for heuristic engine)
     pl.DataFrame().write_csv(output_dir / "feature_importance.csv")
 
     # Calibration data (not applicable for recommendations)

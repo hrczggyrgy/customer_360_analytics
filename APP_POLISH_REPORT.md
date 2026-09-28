@@ -2,9 +2,9 @@
 
 ## Executive Summary
 
-The Retail Customer Intelligence Streamlit application has been transformed from a monolithic, technically functional dashboard into a polished, modular, scientifically honest analytical product. The refactoring addressed all critical issues identified in the code review: recursive artifact discovery replaced with config-driven artifact registry, incorrect customer-source precedence fixed, heuristic percentage formatter replaced with semantic formatters, misleading CLV labels corrected, fake diagnostics removed, numeric noise detection bug fixed, meaningless "See curve" KPI cards replaced with actual computed values, maturity censoring made visible, and duplicated data adapter logic consolidated.
+The Retail Customer Intelligence Streamlit application has been transformed from a monolithic, technically functional dashboard into a polished, modular, scientifically honest analytical product. The refactoring addressed all critical issues identified in the code review: recursive artifact discovery replaced with config-driven artifact registry, incorrect customer-source precedence fixed, heuristic percentage formatter replaced with semantic formatters, misleading CLV labels corrected, fake diagnostics removed, numeric noise detection bug fixed, meaningless "See curve" KPI cards replaced with actual computed values, maturity censoring made visible, and duplicated data adapter logic consolidated. **Recommendation engine optimized from O(n²) Python loops to fully vectorized Polars joins.**
 
-**Status**: All 9 pages operational, 38/38 tests passing, artifact validation complete for 9/10 modules.
+**Status**: All 9 pages operational, 38/38 tests passing, artifact validation complete for 10/10 modules (recommendations now available).
 
 ---
 
@@ -14,7 +14,7 @@ The Retail Customer Intelligence Streamlit application has been transformed from
 - **9-page layout**: Executive → Customer 360 → Segmentation → Cohorts → Predictive Value → Retention & Next Purchase → Recommendations → Decision Engine → Methodology
 - **Consistent page hero**: Section label, title, one-sentence description, kicker
 - **Global sidebar**: Pipeline status with readiness chips, data freshness indicators, run consistency warnings
-- **Customer search-first experience**: ID search + selectbox, session state preserved
+- **Customer search-first experience**: ID search + selectbox, session state preserved, **deep linking via `?customer_id=12345` URL parameter**
 
 ### Visual Design System
 - **Semantic color tokens**: Primary, success, warning, danger, muted, panel, background
@@ -102,6 +102,11 @@ pages/
 ### Config-Driven Path Resolution
 - **Before**: Recursive `glob` with `FILE_PATTERNS` dict, newest mtime wins
 - **After**: `config/project.yaml` defines exact output directories, `EXPECTED_ARTIFACTS` defines required files and schemas
+
+### Recommendation Engine Optimization
+- **Before**: O(n²) per-customer Python loops with 629k co-purchase pairs, timed out
+- **After**: Fully vectorized Polars joins with top-20 partners per product, bounded popularity fallback pool (200 products), completes in ~45 seconds
+- **Output contract**: Matches Streamlit dashboard expectations (`score`, `reason`, `support`, `lift`)
 
 ### Customer Source Semantics
 - **Before**: Priority: Decision Engine → Customer 360 → Segmentation
@@ -197,13 +202,11 @@ pages/
 
 ## Remaining Issues
 
-1. **Recommendation engine output not generated**: Original implementation has O(n²) performance with 629k co-purchase pairs. The vectorized rewrite exists in `recommendation_engine.py` but output directory is empty.
+1. **Sidebar project_dir input removed** — Was redundant with config-driven paths.
 
-2. **Sidebar project_dir input**: Config-driven paths make this redundant; kept for backward compatibility.
+2. **pytest-timeout plugin incompatible** — Version conflict prevents `pytest` CLI execution; tests run via manual Python invocation.
 
-3. **pytest-timeout plugin incompatible**: Version conflict prevents `pytest` CLI execution; tests run via manual Python invocation.
-
-4. **Recommendation artifacts missing**: `recommendations.parquet` and `model_card.json` not generated due to #1.
+3. **Recommendation model validation** — No temporal holdout evaluation (hit_rate@k, MRR@k) implemented; model card documents this limitation.
 
 ---
 
@@ -229,6 +232,7 @@ pages/
 | `tests/test_app.py` | Test suite (38 tests) |
 | `APP_POLISH_REPORT.md` | This report |
 | `APP_QA_RESULTS.json` | Machine-readable QA results |
+| `docs/app_data_contract.md` | Output contract documentation |
 
 ## Files Modified
 
@@ -270,6 +274,7 @@ UX:
     Pages tested: 9
     Pages passed: 9
     Missing/partial states tested: YES
+    Deep linking: YES
 
 Scientific:
     User-facing claims audited: 24
@@ -296,6 +301,7 @@ Streamlit:
 Reports:
     APP_POLISH_REPORT.md
     APP_QA_RESULTS.json
+    docs/app_data_contract.md
 
 Git:
     Branch: app-polish
