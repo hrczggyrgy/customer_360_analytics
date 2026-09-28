@@ -25,7 +25,7 @@
     "churn": "ready",
     "reactivation": "ready",
     "product_analytics": "ready",
-    "recommendations": "unavailable",
+    "recommendations": "ready",
     "decision_engine": "ready"
   },
   "scientific_label_audit": {
@@ -37,10 +37,11 @@
     "immature_cohorts_handled": true,
     "confidence_not_confused_with_probability": true
   },
+  "deep_linking": true,
+  "recommendation_engine_optimized": true,
   "remaining_issues": [
-    "Recommendation engine output not generated (O(n^2) performance issue in original implementation)",
-    "Streamlit app uses config-driven paths but still has project_dir input in sidebar",
     "pytest-timeout plugin incompatible with current pytest version",
-    "Recommendation engine model_card.json and recommendations.parquet not generated"
+    "Recommendation model validation: no temporal holdout evaluation (hit_rate@k, MRR@k)",
+    "Recommendation engine model card documents limitations honestly"
   ]
 }

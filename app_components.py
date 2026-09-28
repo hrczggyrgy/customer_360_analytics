@@ -439,6 +439,7 @@ def render_tabbed_content(
 def render_customer_selector(
     customer_df: pd.DataFrame,
     key_prefix: str = "customer",
+    default_customer: Optional[int] = None,
 ) -> Optional[int]:
     """Render a customer search/selector widget.
 
@@ -457,6 +458,10 @@ def render_customer_selector(
 
     ids = customer_df[id_col].dropna().astype(int).tolist()
 
+    default_index = 0
+    if default_customer is not None and default_customer in ids:
+        default_index = ids.index(default_customer)
+
     col1, col2 = st.columns([0.6, 0.4])
 
     with col1:
@@ -464,6 +469,7 @@ def render_customer_selector(
             "Select Customer",
             options=ids,
             format_func=lambda x: f"Customer {x}",
+            index=default_index,
             key=f"{key_prefix}_select",
         )
 

@@ -49,11 +49,26 @@ def render_customer_360_page() -> None:
     source_labels = ", ".join(source_info.keys())
     st.markdown(f"Data sources: **{source_labels}** — `{len(customer_df):,}` customers")
 
+    # Deep linking: read customer_id from URL query params
+    query_params = st.query_params
+    default_customer = None
+    if "customer_id" in query_params:
+        try:
+            default_customer = int(query_params["customer_id"])
+            if not (customer_df["Customer ID"] == default_customer).any():
+                default_customer = None
+        except (ValueError, TypeError):
+            default_customer = None
+
     # Customer selector
-    selected_id = render_customer_selector(customer_df, key_prefix="c360")
+    selected_id = render_customer_selector(customer_df, key_prefix="c360", default_customer=default_customer)
 
     if selected_id is None:
         st.stop()
+
+    # Update URL query param for deep linking
+    if selected_id != default_customer:
+        st.query_params["customer_id"] = str(selected_id)
 
     # Get customer row
     row = customer_df[customer_df["Customer ID"] == selected_id]
