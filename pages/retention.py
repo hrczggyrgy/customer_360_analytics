@@ -123,9 +123,9 @@ def render_purchase_propensity_tab(churn: pd.DataFrame) -> None:
 
     # Support multiple horizons
     horizons = {
-        "7-day": ["next_purchase_probability_7d", "purchase_probability_7d"],
-        "30-day": ["next_purchase_probability_30d", "next_purchase_probability", "purchase_probability_30d"],
-        "60-day": ["next_purchase_probability_60d", "purchase_probability_60d"],
+        "7-day": ["next_purchase_7d_probability", "next_purchase_probability_7d", "purchase_probability_7d"],
+        "30-day": ["next_purchase_30d_probability", "next_purchase_probability_30d", "next_purchase_probability", "purchase_probability_30d"],
+        "60-day": ["next_purchase_60d_probability", "next_purchase_probability_60d", "purchase_probability_60d"],
     }
 
     horizon = st.selectbox("Prediction Horizon", options=list(horizons.keys()), index=1)
@@ -173,7 +173,7 @@ def render_risk_vs_propensity_tab(churn: pd.DataFrame) -> None:
             break
 
     pcol = None
-    for c in ["next_purchase_probability_30d", "next_purchase_probability", "purchase_probability_30d"]:
+    for c in ["next_purchase_30d_probability", "next_purchase_probability_30d", "next_purchase_probability", "purchase_probability_30d"]:
         if c in churn.columns:
             pcol = c
             break

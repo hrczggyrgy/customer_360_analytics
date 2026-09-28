@@ -164,6 +164,11 @@ EXPECTED_ARTIFACTS = {
             "required_columns": ["cohort_month"],
             "min_rows": 1,
         },
+        "matrix_gross_revenue_retention": {
+            "patterns": ["matrix_gross_revenue_retention.csv"],
+            "required_columns": ["cohort_month"],
+            "min_rows": 1,
+        },
         "retention_decay_curve": {
             "patterns": ["retention_decay_curve.csv"],
             "required_columns": ["age_month"],

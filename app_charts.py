@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 
@@ -611,10 +612,12 @@ def plot_pca_scatter(
     if len(plot_df) > sample_max:
         plot_df = plot_df.sample(n=sample_max, random_state=42)
 
-    # Separate noise if present
-    if color_col and noise_label in plot_df[color_col].astype(str).unique():
-        noise_df = plot_df[plot_df[color_col].astype(str) == noise_label]
-        cluster_df = plot_df[plot_df[color_col].astype(str) != noise_label]
+    # Separate noise if present (noise is typically segment == -1 or string "noise")
+    if color_col:
+        color_series = plot_df[color_col].astype(str)
+        is_noise = (color_series == noise_label) | (pd.to_numeric(color_series, errors="coerce") == -1)
+        noise_df = plot_df[is_noise]
+        cluster_df = plot_df[~is_noise]
 
         fig = go.Figure()
 

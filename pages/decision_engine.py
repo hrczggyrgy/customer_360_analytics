@@ -39,7 +39,7 @@ def render_decision_page() -> None:
 
     # Find key columns
     action_col = None
-    for c in ["final_action", "recommended_action", "action"]:
+    for c in ["recommended_action_capped", "final_action", "recommended_action", "action"]:
         if c in decision.columns:
             action_col = c
             break
@@ -58,7 +58,7 @@ def render_decision_page() -> None:
             break
 
     d_next = None
-    for c in ["next_purchase_probability_30d", "next_purchase_probability", "purchase_probability_30d"]:
+    for c in ["next_purchase_30d_probability", "next_purchase_probability_30d", "next_purchase_probability", "purchase_probability_30d"]:
         if c in decision.columns:
             d_next = c
             break

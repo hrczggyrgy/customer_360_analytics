@@ -27,7 +27,7 @@ from app_charts import (
 from app_data import get_registry, get_profile_adapter
 from app_formatting import (
     format_clv, format_churn_risk, format_next_purchase, format_currency,
-    format_count, format_date, format_duration_months, format_probability,
+    format_count, format_date, format_month, format_duration_months, format_probability,
     format_percent, auto_format,
 )
 
