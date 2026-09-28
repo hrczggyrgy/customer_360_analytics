@@ -108,7 +108,7 @@ def render():
                 )
                 
                 if selected:
-                    fig = plot_segment_heatmap(p, segment_col=seg, metric_cols=selected)
+                    fig = plot_segment_heatmap(p, segment_col=seg, metric_cols=selected, title="Segment behavioral profiles")
                     st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
             
             st.caption(

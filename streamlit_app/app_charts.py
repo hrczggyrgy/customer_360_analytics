@@ -8,8 +8,10 @@ color schemes, and styling across all pages.
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from typing import List, Optional, Dict, Any
 
 
 # =============================================================================

@@ -94,8 +94,13 @@ def render():
     left, right = st.columns([0.95, 1.05])
     
     with left:
-        fig = plot_action_allocation(decision, action_col=action_col)
-        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        if action_col:
+            action_counts = decision[action_col].value_counts().reset_index()
+            action_counts.columns = [action_col, "count"]
+            fig = plot_action_allocation(action_counts, action_col=action_col, count_col="count")
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        else:
+            render_missing("Action column not found.")
     
     with right:
         if decision_clv and d_churn and priority_col:

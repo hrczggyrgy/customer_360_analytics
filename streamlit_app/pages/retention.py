@@ -22,6 +22,7 @@ from ..app_charts import (
 
 def render():
     """Render the Retention & Next Purchase page."""
+    import pandas as pd
     registry = get_registry()
     
     churn = registry.load_dataframe("churn")
@@ -64,7 +65,6 @@ def render():
                 fig = plot_histogram(values, "Churn probability", "Predicted probability of churn / inactivity")
                 st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
                 
-                import streamlit as st
                 st.markdown("""
                 <div class='science-card'>
                     <h4>Why survival modeling is different from a churn label</h4>

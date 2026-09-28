@@ -243,8 +243,6 @@ st.markdown(
 # SIDEBAR
 # =============================================================================
 
-from .app_components import STATUS_COLORS
-
 def render_sidebar():
     """Render the global sidebar with pipeline status."""
     st.sidebar.markdown("### Retail Customer Intelligence")
