@@ -1,0 +1,95 @@
+{
+  "project_status": "substantially_complete",
+  "git_initialized": true,
+  "baseline_commit": "e727d78",
+  "final_commit": "pending",
+  "phases": {
+    "ingestion": {
+      "status": "IMPLEMENTED",
+      "evidence": "Invoice preserved as string from Excel source; 19,494 cancellations detected in canonical transactions"
+    },
+    "transaction_semantics": {
+      "status": "IMPLEMENTED",
+      "evidence": "Explicit taxonomy (sale, return, cancellation, discount, postage, fee, voucher, manual_adjustment, other); financial measures computed and reconciled"
+    },
+    "data_quality": {
+      "status": "IMPLEMENTED",
+      "evidence": "Automated validation suite with schema, invoice string, date, quantity/price, financial reconciliation, customer aggregation checks; quality artifacts generated"
+    },
+    "customer_month": {
+      "status": "IMPLEMENTED",
+      "evidence": "Canonical dense panel (Customer ID × Calendar Month) with 5,878 customers × 25 months; cumulative lifetime features, rolling windows, lagged features, state transitions, leakage-safe targets"
+    },
+    "customer_360": {
+      "status": "IMPLEMENTED",
+      "evidence": "Two outputs: descriptive current-state (131 features, 5,878 customers) + point-in-time feature engine (5 prediction dates, leakage-safe); feature registry with point_in_time_safe flags"
+    },
+    "segmentation": {
+      "status": "IMPLEMENTED",
+      "evidence": "HDBSCAN with 12 clusters + noise (83.4% coverage, 16.6% noise); bootstrap stability (10 repeats) with ARI 0.97-0.99; block balancing; PCA diagnostics exported"
+    },
+    "cohorts": {
+      "status": "IMPLEMENTED",
+      "evidence": "25 cohorts with logo/gross/net revenue retention; maturity tracking; NRR > 100% documented as retail revenue index; acquisition quality metrics"
+    },
+    "clv": {
+      "status": "IMPLEMENTED",
+      "evidence": "Renamed to 'Dynamic Probabilistic Discounted Net-Revenue CLV Proxy'; vectorized MC (NumPy broadcasting); margin scenarios (10%/20%/30%/40%); temporal backtest framework; Platt calibration; p10/p50/p90 intervals"
+    },
+    "churn": {
+      "status": "IMPLEMENTED",
+      "evidence": "Target alignment bug fixed; single-panel architecture; temporal split (64,915/10,339/16,866); calibrated probabilities; survival curves (3/6/12m); ROC-AUC, PR-AUC, Brier, calibration"
+    },
+    "next_purchase": {
+      "status": "IMPLEMENTED",
+      "evidence": "7/30/60-day targets via asof join on invoice dates; calibrated models; same temporal split as churn"
+    },
+    "reactivation": {
+      "status": "PARTIALLY_IMPLEMENTED",
+      "evidence": "reactivation_event flag in customer-month panel; dedicated reactivation_model.py not yet created"
+    },
+    "product_analytics": {
+      "status": "PARTIALLY_IMPLEMENTED",
+      "evidence": "Product-level stats available in customer-month panel; dedicated product_analytics.py not yet created"
+    },
+    "recommendations": {
+      "status": "NOT_IMPLEMENTED",
+      "evidence": "Planned: co-purchase affinity → customer-specific recommendations; recommendation_engine.py not created"
+    },
+    "decision_engine": {
+      "status": "PARTIALLY_IMPLEMENTED",
+      "evidence": "Dashboard has Decision Engine page; dedicated decision_engine.py with capacity-aware prioritization not yet created"
+    },
+    "streamlit": {
+      "status": "PARTIALLY_IMPLEMENTED",
+      "evidence": "Dashboard renders all pages; uses recursive file discovery; needs config-driven paths and data freshness indicators"
+    },
+    "testing": {
+      "status": "PARTIALLY_IMPLEMENTED",
+      "evidence": "Validation functions in retail_ds/validation.py; formal pytest test suite not yet created"
+    },
+    "documentation": {
+      "status": "PARTIALLY_IMPLEMENTED",
+      "evidence": "IMPLEMENTATION_REPORT.md created; IMPLEMENTATION_STATUS.json created; config.yaml, pyproject.toml, requirements.txt not yet added"
+    }
+  },
+  "tests": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0
+  },
+  "known_blockers": [
+    "Reactivation model, product analytics, recommendation engine, decision engine not fully implemented",
+    "Config file (config/project.yaml) not created",
+    "Dependency lock (pyproject.toml, requirements.txt) not created",
+    "Formal test suite (pytest) not created",
+    "Streamlit app needs config-driven path resolution"
+  ],
+  "remaining_scientific_risks": [
+    "NRR > 100% retail revenue index semantics need clearer documentation in outputs",
+    "CLV uncertainty calibration (empirical coverage of p10/p90) not yet verified",
+    "Reactivation model not implemented",
+    "Decision engine observational framing needs explicit documentation in all outputs",
+    "Margin scenarios assume constant rate; no COGS data in Online Retail II"
+  ]
+}
