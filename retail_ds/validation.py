@@ -205,7 +205,7 @@ def validate_customer_aggregation(
     if "lifetime_gross_revenue" not in customer_features.columns:
         return ValidationResult(check_name, False, "lifetime_gross_revenue missing from customer features", {}, "error")
 
-    tx_gross = tx.filter(pl.col("is_clean_sale")).select(pl.col("line_value").sum()).item()
+    tx_gross = tx.filter(pl.col("is_sale")).select(pl.col("line_value").sum()).item()
     cust_gross = customer_features.select(pl.col("lifetime_gross_revenue").sum()).item()
     diff = abs(tx_gross - cust_gross)
 

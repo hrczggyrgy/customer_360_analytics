@@ -40,6 +40,10 @@ class TemporalSplit:
             "origin_label": self.origin_label,
         }
 
+    def apply(self, df: pl.DataFrame, date_column: str) -> Tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+        """Split a DataFrame into train/val/test based on this TemporalSplit."""
+        return apply_temporal_split(df, date_column, self)
+
 
 def rolling_origin_split(
     df: pl.DataFrame,

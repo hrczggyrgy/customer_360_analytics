@@ -25,9 +25,6 @@ cohort_analysis_output/
 clv_analysis_output/
 churn_next_purchase_output/
 customer_360_output/
-xlsx_output/
-full_output/
-test_output/
 recommendation_output/
 reactivation_output/
 decision_engine_output/
@@ -39,7 +36,7 @@ product_analytics_output/
 *.model
 model_cards/
 
-# Data
+# Data - keep data_xslx/ directory but not large raw files
 data_xslx/*.xlsx
 data_xslx/*.csv
 data_xslx/*.parquet
@@ -75,24 +72,11 @@ build/
 
 # Cache
 .cache/
-.codegraph/
-.omo/
-.opencode/
+.codegraph
 
 # Opencode/Oh-My-Opencode
 .opencode/
 .omo/
-.omo/
-
-# Scientific correctness / review files
-SCIENTIFIC_REVIEW.md
-SCIENTIFIC_REVIEW_RESULTS.json
-IMPLEMENTATION_REPORT.md
-IMPLEMENTATION_STATUS.json
-improvement_plan.md
 
 # Codegraph
 .codegraph/
-
-# Recommendation output (large files)
-recommendation_output/
