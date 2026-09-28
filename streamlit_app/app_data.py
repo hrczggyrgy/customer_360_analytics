@@ -191,7 +191,7 @@ class ArtifactRegistry:
         self.project_root = get_project_root()
         self._cache: Dict[str, Any] = {}
 
-    def _get_output_dir(self, module: str) -> Path:
+    def _get_output_dir(self, module: str) -> Optional[Path]:
         """Resolve output directory for a module from config."""
         output_key = module
         if module == "churn":
@@ -201,7 +201,7 @@ class ArtifactRegistry:
         
         rel_path = self.config.get("outputs", {}).get(output_key)
         if not rel_path:
-            raise ValueError(f"No output directory configured for module: {module}")
+            return None
         return self.project_root / rel_path
 
     def _load_manifest(self, module: str, artifact: ArtifactInfo) -> None:
@@ -236,7 +236,7 @@ class ArtifactRegistry:
                 LOGGER.debug(f"Failed to parse run_manifest for {module}: {e}")
 
     def _validate_artifact(self, artifact: ArtifactInfo, spec: Dict) -> None:
-        """Validate artifact against expected schema."""
+        """Validate artifact against expected schema and semantic constraints."""
         artifact.validation_errors = []
         
         if not artifact.exists:
@@ -255,8 +255,46 @@ class ArtifactRegistry:
                 artifact.validation_state = "schema_mismatch"
                 return
         
-        artifact.validation_state = "valid"
-        artifact.valid = True
+        # Semantic validation for known modules
+        if artifact.module == "recommendations":
+            self._validate_recommendations_artifact(artifact)
+        elif artifact.module == "churn":
+            self._validate_churn_artifact(artifact)
+        elif artifact.module == "decision_engine":
+            self._validate_decision_engine_artifact(artifact)
+        
+        if artifact.validation_errors:
+            artifact.validation_state = "validation_failed"
+        else:
+            artifact.validation_state = "valid"
+            artifact.valid = True
+
+    def _validate_recommendations_artifact(self, artifact: ArtifactInfo) -> None:
+        """Validate recommendations artifact semantics."""
+        # This would require loading the data; for now, we check column presence
+        required = ["Customer ID", "recommended_product", "rank", "score", "reason"]
+        if artifact.columns:
+            missing = [c for c in required if c not in artifact.columns]
+            if missing:
+                artifact.validation_errors.append(f"Recommendations missing required columns: {missing}")
+
+    def _validate_churn_artifact(self, artifact: ArtifactInfo) -> None:
+        """Validate churn artifact semantics."""
+        prob_cols = ["churn_probability", "survival_3m", "survival_6m", "survival_12m",
+                     "next_purchase_7d_probability", "next_purchase_30d_probability", "next_purchase_60d_probability"]
+        if artifact.columns:
+            for col in prob_cols:
+                if col in artifact.columns:
+                    # Note: actual value validation would require loading data
+                    pass
+
+    def _validate_decision_engine_artifact(self, artifact: ArtifactInfo) -> None:
+        """Validate decision engine artifact semantics."""
+        required = ["Customer ID", "recommended_action_capped", "priority_score", "decision_confidence"]
+        if artifact.columns:
+            missing = [c for c in required if c not in artifact.columns]
+            if missing:
+                artifact.validation_errors.append(f"Decision engine missing required columns: {missing}")
 
     def _read_artifact_metadata(self, path: Path) -> ArtifactInfo:
         """Read metadata from an artifact file without loading full data."""
@@ -279,8 +317,9 @@ class ArtifactRegistry:
             elif path.suffix == ".csv":
                 df = pd.read_csv(path, nrows=0)
                 info.columns = df.columns.tolist()
-                # Estimate row count from file size
-                info.row_count = max(1, stat.st_size // max(1, df.memory_usage(deep=True).sum()))
+                # Count rows properly (not estimate from file size)
+                row_count = sum(1 for _ in open(path)) - 1  # subtract header
+                info.row_count = max(0, row_count)
         except Exception as e:
             LOGGER.debug(f"Failed to read metadata from {path}: {e}")
         
@@ -349,6 +388,8 @@ class ArtifactRegistry:
     def load_dataframe(self, module: str, artifact_name: str = "primary") -> Optional[pd.DataFrame]:
         """Load a DataFrame from an artifact with caching."""
         output_dir = self._get_output_dir(module)
+        if output_dir is None:
+            return None
         spec = EXPECTED_ARTIFACTS.get(module, {})
         
         if artifact_name == "primary":

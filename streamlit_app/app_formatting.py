@@ -29,6 +29,7 @@ class SemanticType:
     DATE = "date"
     MONTH = "month"
     DURATION_MONTHS = "duration_months"
+    DURATION_DAYS = "duration_days"
     SCORE = "score"
     UNKNOWN = "unknown"
 
@@ -141,22 +142,26 @@ COLUMN_FORMAT_MAP: dict[str, str] = {
     "product_count": SemanticType.COUNT,
     "repeat_customers": SemanticType.COUNT,
     
-    # Duration fields
-    "tenure_days": SemanticType.DURATION_MONTHS,
-    "recency_days": SemanticType.DURATION_MONTHS,
+    # Duration fields (months)
     "recency_months": SemanticType.DURATION_MONTHS,
-    "interpurchase_days": SemanticType.DURATION_MONTHS,
-    "median_interpurchase_days": SemanticType.DURATION_MONTHS,
-    "interpurchase_seconds": SemanticType.DURATION_MONTHS,
-    "mean_interpurchase_seconds": SemanticType.DURATION_MONTHS,
-    "median_interpurchase_seconds": SemanticType.DURATION_MONTHS,
-    "std_interpurchase_seconds": SemanticType.DURATION_MONTHS,
-    "expected_days_to_next_purchase": SemanticType.DURATION_MONTHS,
-    "days_since_last_purchase": SemanticType.DURATION_MONTHS,
-    "days_since_last_sale": SemanticType.DURATION_MONTHS,
     "consecutive_inactive_months": SemanticType.DURATION_MONTHS,
     "age_month": SemanticType.DURATION_MONTHS,
     "calendar_month_id": SemanticType.DURATION_MONTHS,
+    
+    # Duration fields (days)
+    "tenure_days": SemanticType.DURATION_DAYS,
+    "recency_days": SemanticType.DURATION_DAYS,
+    "interpurchase_days": SemanticType.DURATION_DAYS,
+    "median_interpurchase_days": SemanticType.DURATION_DAYS,
+    "expected_days_to_next_purchase": SemanticType.DURATION_DAYS,
+    "days_since_last_purchase": SemanticType.DURATION_DAYS,
+    "days_since_last_sale": SemanticType.DURATION_DAYS,
+    
+    # Duration fields (seconds - treated as days for display)
+    "interpurchase_seconds": SemanticType.DURATION_DAYS,
+    "mean_interpurchase_seconds": SemanticType.DURATION_DAYS,
+    "median_interpurchase_seconds": SemanticType.DURATION_DAYS,
+    "std_interpurchase_seconds": SemanticType.DURATION_DAYS,
     
     # Score fields
     "score": SemanticType.SCORE,
@@ -271,11 +276,33 @@ def format_percent(value: Any, decimals: int = 1) -> str:
     except (TypeError, ValueError):
         return "—"
     
-    # Heuristic: if value > 1.5, assume it's already in percentage scale
-    if abs(value) > 1.5:
+    # Use explicit semantic contract: values > 1 are treated as already in percentage scale
+    # This matches the explicit COLUMN_FORMAT_MAP assignments
+    if abs(value) > 1:
         return f"{value:.{decimals}f}%"
     else:
         return f"{value * 100:.{decimals}f}%"
+
+
+def format_days(value: Any, decimals: int = 0) -> str:
+    """Format a duration in days.
+    
+    Args:
+        value: Duration in days
+        decimals: Decimal places
+    
+    Returns:
+        Formatted string like "45 days" or "—"
+    """
+    if value is None or (isinstance(value, float) and (math.isnan(value) or math.isinf(value))):
+        return "—"
+    
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    
+    return f"{value:.{decimals}f} days"
 
 
 def format_ratio(value: Any, decimals: int = 2) -> str:
@@ -457,8 +484,11 @@ def infer_semantic_type(column_name: str, sample_values: Optional[list] = None) 
     if any(kw in normalized for kw in ["count", "customers", "orders", "invoices", "products", "countries", "reactivation", "churn_transition", "return_invoice", "return_line", "active_month"]):
         return SemanticType.COUNT
     
-    if any(kw in normalized for kw in ["days", "months", "duration", "tenure", "recency", "interpurchase", "age_", "consecutive_inactive", "expected_days", "days_since", "calendar_month_id", "cohort_month_id"]):
+    if any(kw in normalized for kw in ["months", "duration", "tenure", "recency", "interpurchase", "age_", "consecutive_inactive", "calendar_month_id", "cohort_month_id"]):
         return SemanticType.DURATION_MONTHS
+    
+    if any(kw in normalized for kw in ["days", "expected_days", "days_since"]):
+        return SemanticType.DURATION_DAYS
     
     if any(kw in normalized for kw in ["score", "lift", "priority", "support", "pop_score", "aov_", "co_purchase", "popularity", "final_score"]):
         return SemanticType.SCORE
@@ -507,6 +537,8 @@ def auto_format(value: Any, column_name: str = "") -> str:
         return format_month(value)
     elif sem_type == SemanticType.DURATION_MONTHS:
         return format_duration_months(value)
+    elif sem_type == SemanticType.DURATION_DAYS:
+        return format_days(value)
     elif sem_type == SemanticType.SCORE:
         return format_score(value)
     else:

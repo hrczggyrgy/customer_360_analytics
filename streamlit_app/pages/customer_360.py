@@ -37,7 +37,8 @@ def render():
     
     # Load data
     customer_df = registry.load_dataframe("customer_360")
-    monthly = registry.load_dataframe("cohorts", "customer_month_events.csv")
+    # Use canonical customer-month panel from customer_360 output, not cohorts
+    monthly = registry.load_dataframe("customer_360", "customer_month.parquet")
     
     if customer_df is None or customer_df.empty:
         st.warning("No customer-level table was detected. Run customer_360.py first.")
@@ -75,12 +76,19 @@ def render():
     
     row = row.iloc[0]
     
-    # Extract key values
-    segment_value = row.get("segment_name") or row.get("segment")
-    clv_value = row.get("clv_mean") or row.get("clv") or row.get("predicted_clv") or row.get("customer_clv")
-    churn_value = row.get("churn_probability") or row.get("churn_prob") or row.get("prob_churn")
-    purchase_value = row.get("next_purchase_probability") or row.get("next_purchase_probability_30d") or row.get("purchase_probability_30d")
-    action_value = row.get("recommended_action_capped") or row.get("final_action") or row.get("recommended_action")
+    # Extract key values - use safe null-aware extraction
+    def safe_get(row, *keys):
+        """Get first non-null value from row for given keys."""
+        for k in keys:
+            if k in row and pd.notna(row[k]):
+                return row[k]
+        return None
+    
+    segment_value = safe_get(row, "segment_name", "segment")
+    clv_value = safe_get(row, "clv_mean", "clv", "predicted_clv", "customer_clv")
+    churn_value = safe_get(row, "churn_probability", "churn_prob", "prob_churn")
+    purchase_value = safe_get(row, "next_purchase_probability", "next_purchase_probability_30d", "purchase_probability_30d")
+    action_value = safe_get(row, "recommended_action_capped", "final_action", "recommended_action")
     
     # Customer header
     render_customer_header(
@@ -90,8 +98,8 @@ def render():
     )
     
     # Metric cards
-    revenue_value = row.get("net_revenue") or row.get("revenue") or row.get("gross_revenue")
-    orders_value = row.get("orders") or row.get("invoice_count")
+    revenue_value = safe_get(row, "net_revenue", "revenue", "gross_revenue")
+    orders_value = safe_get(row, "orders", "invoice_count")
     
     render_customer_metric_row([
         ("CLV", clv_value, "currency"),
@@ -165,7 +173,7 @@ def render():
             else:
                 plot_missing("Customer-month columns were not recognized.")
         else:
-            plot_missing("Run cohort_analysis.py to populate monthly customer history.")
+            plot_missing("Run customer_360.py to populate monthly customer history.")
     
     with right:
         st.markdown("#### Model evidence")

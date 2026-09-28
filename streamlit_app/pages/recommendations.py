@@ -106,14 +106,14 @@ def render():
             customer_recs = customer_recs.merge(prod_info, on="recommended_product", how="left")
         
         # Format for display
-        display_cols = ["recommended_product", "Description", "Product Role", "score", "reason", "support", "lift"]
+        display_cols = ["recommended_product", "Description", "Product Role", "score", "reason", "support", "association_lift"]
         if "Avg Price" in customer_recs.columns:
             display_cols.extend(["Avg Price", "Total Revenue"])
         
         display = customer_recs[display_cols].copy()
         display["score"] = display["score"].apply(lambda x: f"{x:.4f}")
-        if "lift" in display.columns:
-            display["lift"] = display["lift"].apply(lambda x: f"{x:.2f}")
+        if "association_lift" in display.columns:
+            display["association_lift"] = display["association_lift"].apply(lambda x: f"{x:.2f}")
         if "Avg Price" in display.columns:
             display["Avg Price"] = display["Avg Price"].apply(lambda x: f"£{x:.2f}" if pd.notna(x) else "—")
         if "Total Revenue" in display.columns:

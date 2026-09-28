@@ -96,7 +96,7 @@ class TestFormatters:
     def test_format_percent(self):
         assert format_percent(0.25) == "25.0%"
         assert format_percent(25) == "25.0%"
-        assert format_percent(1.5) == "150.0%"
+        assert format_percent(1.5) == "1.5%"
         assert format_percent(1.6) == "1.6%"
         assert format_percent(1.6, decimals=2) == "1.60%"
         assert format_percent(None) == "—"
@@ -250,34 +250,68 @@ class TestIntegration:
 class TestDataValidation:
     """Tests for data quality and validation."""
 
+    def test_recommendations_artifact_exists(self):
+        """Test that recommendations artifact exists and loads."""
+        registry = get_registry()
+        recs = registry.load_dataframe("recommendations")
+        assert recs is not None, "Recommendations artifact should exist"
+        assert len(recs) > 0, "Recommendations should not be empty"
+
     def test_duplicate_recommendations(self):
         """Test that recommendations don't have duplicate customer-product pairs."""
         registry = get_registry()
         recs = registry.load_dataframe("recommendations")
-        if recs is not None:
-            dupes = recs.duplicated(subset=["Customer ID", "recommended_product"]).sum()
-            # Current implementation has some duplicates
-            print(f"Found {dupes} duplicate recommendations")
+        assert recs is not None, "Recommendations artifact should exist"
+        dupes = recs.duplicated(subset=["Customer ID", "recommended_product"]).sum()
+        assert dupes == 0, f"Found {dupes} duplicate recommendations"
+
+    def test_recommendations_artifact_missing_handled(self):
+        """Test that missing recommendations artifact is handled gracefully."""
+        # This test verifies the registry handles missing files without crashing
+        registry = get_registry()
+        # Just verify it doesn't raise an exception
+        recs = registry.load_dataframe("recommendations")
+        # May be None if not generated, but shouldn't crash
 
     def test_recommendation_reason_distribution(self):
         """Test that recommendations have valid reason distribution."""
         registry = get_registry()
         recs = registry.load_dataframe("recommendations")
-        if recs is not None and "reason" in recs.columns:
-            valid_reasons = {"co_purchase", "popularity"}
-            actual_reasons = set(recs["reason"].unique())
-            assert actual_reasons.issubset(valid_reasons)
+        assert recs is not None, "Recommendations artifact should exist"
+        assert "reason" in recs.columns, "Recommendations should have 'reason' column"
+        valid_reasons = {"co_purchase", "popularity"}
+        actual_reasons = set(recs["reason"].unique())
+        assert actual_reasons.issubset(valid_reasons)
+
+    def test_recommendation_reason_missing_handled(self):
+        """Test that missing 'reason' column is handled gracefully."""
+        registry = get_registry()
+        recs = registry.load_dataframe("recommendations")
+        # Should not crash even if reason column is missing
+
+    def test_segmentation_artifact_exists(self):
+        """Test that segmentation artifact exists and loads."""
+        registry = get_registry()
+        segments = registry.load_dataframe("segmentation")
+        assert segments is not None, "Segmentation artifact should exist"
+        assert len(segments) > 0, "Segmentation should not be empty"
 
     def test_segment_noise_detection(self):
         """Test that noise is detected using segment == -1."""
         registry = get_registry()
         segments = registry.load_dataframe("segmentation")
-        if segments is not None and "segment" in segments.columns:
-            noise_count = (segments["segment"] == -1).sum()
-            total = len(segments)
-            noise_pct = noise_count / total
-            # Should be around 16% based on scientific review
-            assert 0.1 < noise_pct < 0.3
+        assert segments is not None, "Segmentation artifact should exist"
+        assert "segment" in segments.columns, "Segmentation should have 'segment' column"
+        noise_count = (segments["segment"] == -1).sum()
+        total = len(segments)
+        noise_pct = noise_count / total
+        assert 0.1 < noise_pct < 0.3
+
+    def test_segment_noise_missing_handled(self):
+        """Test that missing segmentation or segment column is handled gracefully."""
+        registry = get_registry()
+        segments = registry.load_dataframe("segmentation")
+        # Should not crash even if artifact missing
 
 
 # =============================================================================

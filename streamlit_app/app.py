@@ -13,9 +13,18 @@ and consistent scientific labeling.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import streamlit as st
 
-from .app_components import (
+# Ensure project root is on sys.path for both `python -m streamlit run` and `streamlit run`
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Now use absolute imports that work regardless of invocation method
+from streamlit_app.app_components import (
     render_page_hero,
     render_section_label,
     render_status_chip,
@@ -28,9 +37,10 @@ from .app_components import (
     render_action_summary_table,
     render_evidence_table,
     HERO_COPY,
+    STATUS_COLORS,
 )
-from .app_data import get_registry, format_freshness
-from .app_formatting import (
+from streamlit_app.app_data import get_registry, format_freshness
+from streamlit_app.app_formatting import (
     format_currency,
     format_probability,
     format_percent,
@@ -41,7 +51,7 @@ from .app_formatting import (
     format_score,
     auto_format,
 )
-from .app_charts import (
+from streamlit_app.app_charts import (
     base_layout,
     plot_missing,
     plot_histogram_with_marginal,
@@ -60,10 +70,11 @@ from .app_charts import (
     plot_priority_distribution,
     plot_expected_value_by_action,
     plot_clv_vs_churn_by_action,
+    PLOTLY_CONFIG,
 )
 
 # Page modules
-from .pages import (
+from streamlit_app.pages import (
     executive,
     customer_360,
     segmentation,
@@ -232,6 +243,8 @@ st.markdown(
 # SIDEBAR
 # =============================================================================
 
+from .app_components import STATUS_COLORS
+
 def render_sidebar():
     """Render the global sidebar with pipeline status."""
     st.sidebar.markdown("### Retail Customer Intelligence")
@@ -244,9 +257,10 @@ def render_sidebar():
     # Module status
     with st.sidebar.expander("Pipeline status", expanded=True):
         for module, status in statuses.items():
+            color = STATUS_COLORS.get(status.overall_status, "#697386")
             chip = (
                 f"<span style='display:inline-block;padding:5px 10px;border-radius:999px;"
-                f"background:{status.overall_status}15;color:{status.overall_status};"
+                f"background:{color}15;color:{color};"
                 f"font-size:0.76rem;font-weight:700;margin:2px;'>"
                 f"{module.replace('_', ' ').title()}: {status.overall_status.title()}"
                 f"</span>"
