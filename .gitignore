@@ -28,6 +28,10 @@ customer_360_output/
 xlsx_output/
 full_output/
 test_output/
+recommendation_output/
+reactivation_output/
+decision_engine_output/
+product_analytics_output/
 
 # Model artifacts
 *.pkl
@@ -73,3 +77,22 @@ build/
 .cache/
 .codegraph/
 .omo/
+.opencode/
+
+# Opencode/Oh-My-Opencode
+.opencode/
+.omo/
+.omo/
+
+# Scientific correctness / review files
+SCIENTIFIC_REVIEW.md
+SCIENTIFIC_REVIEW_RESULTS.json
+IMPLEMENTATION_REPORT.md
+IMPLEMENTATION_STATUS.json
+improvement_plan.md
+
+# Codegraph
+.codegraph/
+
+# Recommendation output (large files)
+recommendation_output/
