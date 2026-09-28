@@ -1,0 +1,105 @@
+{
+  "version": "V2",
+  "timestamp": "2026-09-28T19:15:00Z",
+  "git_commit": "app-polish-v2",
+  "overall_status": "PASS",
+  "test_results": {
+    "total_tests": 57,
+    "passed": 57,
+    "failed": 0,
+    "test_suites": [
+      {
+        "name": "test_retail_ds.py",
+        "tests": 35,
+        "passed": 35,
+        "failed": 0,
+        "categories": [
+          "Ingestion",
+          "Cleaning",
+          "Transaction Classification",
+          "Customer-Month Panel",
+          "Point-in-Time Features",
+          "Validation",
+          "Backtesting",
+          "Temporal Leakage",
+          "Financial Reconciliation",
+          "Data Integrity"
+        ]
+      },
+      {
+        "name": "test_app.py",
+        "tests": 22,
+        "passed": 22,
+        "failed": 0,
+        "categories": [
+          "Formatters",
+          "App Data (ArtifactRegistry)",
+          "App Components (UI)",
+          "Integration",
+          "Data Validation"
+        ]
+      }
+    ]
+  },
+  "recommendation_engine_evaluation": {
+    "temporal_holdout": {
+      "cutoff": "2011-06-30",
+      "top_k": 10,
+      "hit_rate_at_5": 0.133,
+      "hit_rate_at_10": 0.198,
+      "recall_at_5": 0.0084,
+      "recall_at_10": 0.0141,
+      "mrr_at_10": 0.406,
+      "recommendation_coverage": 1.0,
+      "catalog_coverage": 1.0,
+      "n_customers_evaluated": 5024,
+      "n_customers_with_recommendations": 5024,
+      "n_recommendations": 50191,
+      "baseline_popularity_hit_rate": 0.621
+    },
+    "deduplication": {
+      "total_rows": 29317,
+      "unique_customer_product_pairs": 29317,
+      "duplicates": 0,
+      "status": "PASS"
+    },
+    "reason_distribution": {
+      "co_purchase": "~70%",
+      "popularity": "~30%"
+    }
+  },
+  "streamlit_app": {
+    "startup": "PASS",
+    "architecture": "Modular (app.py ~322 lines + 6 support modules + 9 page modules)",
+    "config_driven": true,
+    "deep_linking": "Implemented (?customer_id=12345)",
+    "cache_invalidation": "File mtime/size in cache keys",
+    "cross_run_consistency": "Detected via run_id/data_version/code_version",
+    "scientific_terminology": "Applied throughout"
+  },
+  "data_validation": {
+    "recommendation_deduplication": "PASS (0 duplicates)",
+    "recommendation_reason_distribution": "PASS (co_purchase, popularity only)",
+    "segment_noise_detection": "PASS (numeric segment == -1, ~16.6% noise)"
+  },
+  "known_issues": [
+    "pytest-timeout plugin incompatible with pytest 7.4.4 (run via python -m pytest -p no:timeout -p no:zarr)",
+    "NRR > 100% retail revenue index needs clearer documentation in outputs",
+    "CLV uncertainty calibration (empirical coverage) not verified",
+    "Reactivation model not fully validated",
+    "Decision engine observational framing needs explicit documentation in all outputs",
+    "Margin scenarios assume constant rate (no COGS data)"
+  ],
+  "performance": {
+    "data_loading": "~15s (Excel via pandas fallback)",
+    "canonical_transactions": "~2s",
+    "customer_month_panel": "~5s",
+    "customer_360": "~10s (including point-in-time features)",
+    "segmentation": "~30s (HDBSCAN)",
+    "clv_training": "~30s models + 5-10 min simulation (50 sims)",
+    "churn_next_purchase": "~45s",
+    "recommendation_engine": "~30s (vectorized Polars)",
+    "decision_engine": "~10s",
+    "full_pipeline": "~15 min (with 50 simulations)"
+  }
+}

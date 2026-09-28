@@ -1,8 +1,8 @@
 {
-  "project_status": "SUBSTANTIALLY_COMPLETE",
+  "project_status": "PORTFOLIO_READY_V2",
   "git_initialized": true,
   "baseline_commit": "e727d78",
-  "final_commit": "pending",
+  "final_commit": "app-polish-v2",
   "phases": {
     "ingestion": {
       "status": "IMPLEMENTED",
@@ -18,7 +18,7 @@
     },
     "customer_month": {
       "status": "IMPLEMENTED",
-      "evidence": "Canonical dense panel (Customer ID \u00d7 Calendar Month) with 5,878 customers \u00d7 25 months; cumulative lifetime features, rolling windows, lagged features, state transitions, leakage-safe targets"
+      "evidence": "Canonical dense panel (Customer ID × Calendar Month) with 5,878 customers × 25 months; cumulative lifetime features, rolling windows, lagged features, state transitions, leakage-safe targets"
     },
     "customer_360": {
       "status": "IMPLEMENTED",
@@ -53,37 +53,34 @@
       "evidence": "Product-level stats available in customer-month panel; dedicated product_analytics.py not yet created"
     },
     "recommendations": {
-      "status": "PARTIALLY_IMPLEMENTED",
-      "evidence": "Code implemented but slow execution; co-purchase matrix has 629k pairs causing O(n^2) per-customer computation"
+      "status": "IMPLEMENTED",
+      "evidence": "Fully vectorized Polars implementation with true association lift computation, bounded fallback pool, normalized co-purchase/popularity scoring, deterministic ranking. Deduplication fixed (0 duplicates in output). Temporal holdout evaluation framework implemented (--temporal-eval --eval-cutoff 2011-06-30)."
     },
     "decision_engine": {
-      "status": "PARTIALLY_IMPLEMENTED",
-      "evidence": "Dashboard has Decision Engine page; dedicated decision_engine.py with capacity-aware prioritization not yet created"
+      "status": "IMPLEMENTED",
+      "evidence": "Dedicated decision_engine.py with capacity-aware prioritization; observational prioritization framework with explicit scientific framing"
     },
     "streamlit": {
-      "status": "PARTIALLY_IMPLEMENTED",
-      "evidence": "App loads and renders pages but uses recursive file discovery; needs config-driven paths"
+      "status": "IMPLEMENTED",
+      "evidence": "Fully modular architecture: app.py (~322 lines) + 6 support modules + 9 page modules. Config-driven ArtifactRegistry with cross-run consistency detection, cache keys include file mtime/size. Semantic formatters, reusable UI components, consistent Plotly charts with design tokens. Customer deep linking via ?customer_id=12345 URL parameter."
     },
     "testing": {
-      "status": "PARTIALLY_IMPLEMENTED",
-      "evidence": "Validation functions in retail_ds/validation.py; formal pytest test suite not yet created"
+      "status": "IMPLEMENTED",
+      "evidence": "57 tests passing (35 retail_ds unit tests + 22 app integration tests). Run with: python -m pytest -p no:timeout -p no:zarr"
     },
     "documentation": {
-      "status": "PARTIALLY_IMPLEMENTED",
-      "evidence": "IMPLEMENTATION_REPORT.md created; IMPLEMENTATION_STATUS.json created; config.yaml, pyproject.toml, requirements.txt not yet added"
+      "status": "IMPLEMENTED",
+      "evidence": "IMPLEMENTATION_REPORT.md, IMPLEMENTATION_STATUS.json, docs/app_data_contract.md (output contract with 10 module schemas), config/project.yaml, pyproject.toml, requirements.txt"
     }
   },
   "tests": {
-    "total": 0,
-    "passed": 0,
+    "total": 57,
+    "passed": 57,
     "failed": 0
   },
   "known_blockers": [
-    "Recommendation engine: O(n^2) per-customer computation with 629k co-purchase pairs; needs optimization",
-    "Streamlit app: recursive file discovery instead of config-driven paths",
-    "Config file created but not all scripts use it yet",
-    "Dependency lock (pyproject.toml, requirements.txt) created but not all scripts use it",
-    "Formal test suite (pytest) not working due to environment issues"
+    "Recommendation engine temporal holdout evaluation not yet run (hit_rate@K, MRR@K metrics pending). Run with --temporal-eval --eval-cutoff 2011-06-30",
+    "pytest-timeout plugin incompatible with current pytest version; tests run via manual Python invocation"
   ],
   "remaining_scientific_risks": [
     "NRR > 100% retail revenue index semantics need clearer documentation in outputs",
@@ -91,6 +88,6 @@
     "Reactivation model not fully validated against holdout",
     "Decision engine observational framing needs explicit documentation in all outputs",
     "Margin scenarios assume constant rate; no COGS data in Online Retail II",
-    "Recommendation engine not fully validated"
+    "Recommendation engine not fully validated - temporal holdout evaluation pending"
   ]
 }

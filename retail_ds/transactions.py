@@ -172,18 +172,23 @@ def classify_transactions(df: pl.DataFrame) -> pl.DataFrame:
         .alias("transaction_type")
     )
 
-    # Add boolean flags for each type
-    for t in ["sale", "return", "cancellation", "discount", "postage", "fee", "voucher", "manual_adjustment"]:
+    # Canonical type flags
+    for t in ["sale", "return", "cancellation", "discount", "postage", "fee", "voucher", "manual_adjustment", "other"]:
         out = out.with_columns(
             (pl.col("transaction_type") == t).alias(f"is_{t}")
         )
 
-    # Other catch-all
-    out = out.with_columns(
-        ~pl.col("transaction_type").is_in([
-            "sale", "return", "cancellation", "discount", "postage", "fee", "voucher", "manual_adjustment"
-        ]).alias("is_other")
-    )
+    # Drop only the cleaning intermediate columns that are redundant after classification
+    # Keep: is_positive_price, is_negative_quantity (renamed), return_units, etc. as they're used downstream
+    redundant_cols = [
+        "is_cancellation_invoice",
+        "is_clean_sale",
+        "is_return_or_cancellation",
+        "line_value",
+        "gross_sale_value",
+        "return_value",
+    ]
+    out = out.drop([c for c in redundant_cols if c in out.columns])
 
     # Log distribution
     type_counts = out.group_by("transaction_type").len().sort("len", descending=True)
