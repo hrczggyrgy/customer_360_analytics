@@ -79,9 +79,10 @@ def render_recommendations_page() -> None:
                 st.markdown(f"**{len(co_purchase):,} product pairs** with co-occurrence ≥ 3")
                 
                 if "cooccurrence" in co_purchase.columns:
-                    top_pairs = co_purchase.nlargest(20, "cooccurrence")[
-                        ["product_a", "product_b", "cooccurrence", "lift"]
-                    ].copy()
+                    display_cols = ["product_a", "product_b", "cooccurrence"]
+                    if "lift" in co_purchase.columns:
+                        display_cols.append("lift")
+                    top_pairs = co_purchase.nlargest(20, "cooccurrence")[display_cols].copy()
                     st.dataframe(top_pairs, use_container_width=True, hide_index=True)
         
         # Scientific context

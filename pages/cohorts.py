@@ -218,11 +218,20 @@ def render_maturity_curve_tab(decay: pd.DataFrame) -> None:
         grr = "weighted_gross_revenue_retention" if "weighted_gross_revenue_retention" in decay.columns else "gross_revenue_retention"
 
         if age:
+            # Only include series that exist in the data
+            has_logo = logo in decay.columns
+            has_nrr = nrr in decay.columns
+            has_grr = grr in decay.columns
+
+            if not any([has_logo, has_nrr, has_grr]):
+                render_missing_data("No retention series found in decay curve.")
+                return
+
             fig = plot_retention_decay(
                 ages=decay[age].tolist(),
-                logo_retention=decay[logo].tolist() if logo else None,
-                nrr=decay[nrr].tolist() if nrr else None,
-                grr=decay[grr].tolist() if grr else None,
+                logo_retention=decay[logo].tolist() if has_logo else None,
+                nrr=decay[nrr].tolist() if has_nrr else None,
+                grr=decay[grr].tolist() if has_grr else None,
                 title="Maturity-Aware Retention Decay",
                 height=500,
             )
