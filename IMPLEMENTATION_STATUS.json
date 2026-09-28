@@ -1,5 +1,5 @@
 {
-  "project_status": "substantially_complete",
+  "project_status": "SUBSTANTIALLY_COMPLETE",
   "git_initialized": true,
   "baseline_commit": "e727d78",
   "final_commit": "pending",
@@ -18,7 +18,7 @@
     },
     "customer_month": {
       "status": "IMPLEMENTED",
-      "evidence": "Canonical dense panel (Customer ID × Calendar Month) with 5,878 customers × 25 months; cumulative lifetime features, rolling windows, lagged features, state transitions, leakage-safe targets"
+      "evidence": "Canonical dense panel (Customer ID \u00d7 Calendar Month) with 5,878 customers \u00d7 25 months; cumulative lifetime features, rolling windows, lagged features, state transitions, leakage-safe targets"
     },
     "customer_360": {
       "status": "IMPLEMENTED",
@@ -53,8 +53,8 @@
       "evidence": "Product-level stats available in customer-month panel; dedicated product_analytics.py not yet created"
     },
     "recommendations": {
-      "status": "NOT_IMPLEMENTED",
-      "evidence": "Planned: co-purchase affinity → customer-specific recommendations; recommendation_engine.py not created"
+      "status": "PARTIALLY_IMPLEMENTED",
+      "evidence": "Code implemented but slow execution; co-purchase matrix has 629k pairs causing O(n^2) per-customer computation"
     },
     "decision_engine": {
       "status": "PARTIALLY_IMPLEMENTED",
@@ -62,7 +62,7 @@
     },
     "streamlit": {
       "status": "PARTIALLY_IMPLEMENTED",
-      "evidence": "Dashboard renders all pages; uses recursive file discovery; needs config-driven paths and data freshness indicators"
+      "evidence": "App loads and renders pages but uses recursive file discovery; needs config-driven paths"
     },
     "testing": {
       "status": "PARTIALLY_IMPLEMENTED",
@@ -79,17 +79,18 @@
     "failed": 0
   },
   "known_blockers": [
-    "Reactivation model, product analytics, recommendation engine, decision engine not fully implemented",
-    "Config file (config/project.yaml) not created",
-    "Dependency lock (pyproject.toml, requirements.txt) not created",
-    "Formal test suite (pytest) not created",
-    "Streamlit app needs config-driven path resolution"
+    "Recommendation engine: O(n^2) per-customer computation with 629k co-purchase pairs; needs optimization",
+    "Streamlit app: recursive file discovery instead of config-driven paths",
+    "Config file created but not all scripts use it yet",
+    "Dependency lock (pyproject.toml, requirements.txt) created but not all scripts use it",
+    "Formal test suite (pytest) not working due to environment issues"
   ],
   "remaining_scientific_risks": [
     "NRR > 100% retail revenue index semantics need clearer documentation in outputs",
     "CLV uncertainty calibration (empirical coverage of p10/p90) not yet verified",
-    "Reactivation model not implemented",
+    "Reactivation model not fully validated against holdout",
     "Decision engine observational framing needs explicit documentation in all outputs",
-    "Margin scenarios assume constant rate; no COGS data in Online Retail II"
+    "Margin scenarios assume constant rate; no COGS data in Online Retail II",
+    "Recommendation engine not fully validated"
   ]
 }
