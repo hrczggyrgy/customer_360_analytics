@@ -82,7 +82,7 @@ COLUMN_FORMAT_MAP: dict[str, str] = {
     "survival_3m": SemanticType.PROBABILITY,
     "survival_6m": SemanticType.PROBABILITY,
     "survival_12m": SemanticType.PROBABILITY,
-    "decision_confidence": SemanticType.PROBABILITY,
+    "decision_confidence": SemanticType.SCORE,
     "segment_confidence": SemanticType.PROBABILITY,
     "confidence": SemanticType.PROBABILITY,
     
@@ -173,7 +173,7 @@ COLUMN_FORMAT_MAP: dict[str, str] = {
     "co_purchase_score": SemanticType.SCORE,
     "popularity_score": SemanticType.SCORE,
     "final_score": SemanticType.SCORE,
-    "lift": SemanticType.SCORE,
+    "lift": SemanticType.RATIO,
     "support": SemanticType.COUNT,
     "pop_score": SemanticType.SCORE,
     "protect_value_score": SemanticType.SCORE,
@@ -494,7 +494,7 @@ def infer_semantic_type(column_name: str, sample_values: Optional[list] = None) 
     if any(kw in normalized for kw in ["days", "expected_days", "days_since"]):
         return SemanticType.DURATION_DAYS
     
-    if any(kw in normalized for kw in ["score", "lift", "priority", "support", "pop_score", "aov_", "co_purchase", "popularity", "final_score"]):
+    if any(kw in normalized for kw in ["score", "priority", "support", "pop_score", "aov_", "co_purchase", "popularity", "final_score"]):
         return SemanticType.SCORE
     
     if any(kw in normalized for kw in ["date", "first_purchase", "last_purchase", "prediction_date", "invoice_date"]):
@@ -601,6 +601,8 @@ def format_dataframe_columns(df: pd.DataFrame, columns: Optional[list] = None) -
             result[col] = result[col].apply(format_month)
         elif sem_type == SemanticType.DURATION_MONTHS:
             result[col] = result[col].apply(format_duration_months)
+        elif sem_type == SemanticType.DURATION_DAYS:
+            result[col] = result[col].apply(format_days)
         elif sem_type == SemanticType.SCORE:
             result[col] = result[col].apply(format_score)
     

@@ -89,7 +89,7 @@ def render_kpi_card(
 
 def render_kpi_row(metrics: List[Dict[str, Any]], max_cols: int = 4) -> None:
     """
-    Render a responsive row of KPI cards.
+    Render a responsive grid of KPI cards with proper row wrapping.
     
     Args:
         metrics: List of dicts with keys: label, value, formatter, help, delta, delta_color
@@ -99,20 +99,21 @@ def render_kpi_row(metrics: List[Dict[str, Any]], max_cols: int = 4) -> None:
     if n == 0:
         return
     
-    # Responsive: use min(max_cols, n) columns
-    cols = st.columns(min(max_cols, n))
-    
-    for i, metric in enumerate(metrics):
-        with cols[i % len(cols)]:
-            render_kpi_card(
-                label=metric.get("label", ""),
-                value=metric.get("value"),
-                help_text=metric.get("help"),
-                formatter=metric.get("formatter", "auto"),
-                column_name=metric.get("column_name", ""),
-                delta=metric.get("delta"),
-                delta_color=metric.get("delta_color", "normal"),
-            )
+    for start in range(0, n, max_cols):
+        row_metrics = metrics[start:start + max_cols]
+        cols = st.columns(len(row_metrics))
+        
+        for col, metric in zip(cols, row_metrics):
+            with col:
+                render_kpi_card(
+                    label=metric.get("label", ""),
+                    value=metric.get("value"),
+                    help_text=metric.get("help"),
+                    formatter=metric.get("formatter", "auto"),
+                    column_name=metric.get("column_name", ""),
+                    delta=metric.get("delta"),
+                    delta_color=metric.get("delta_color", "normal"),
+                )
 
 
 # =============================================================================
@@ -640,6 +641,7 @@ def render_formatted_dataframe(
                 format="£%.0f",
             )
         elif sem_type == SemanticType.PROBABILITY:
+            display_df[col] = display_df[col] * 100
             config[col] = st.column_config.NumberColumn(
                 col.replace("_", " ").title(),
                 format="%.1f%%",

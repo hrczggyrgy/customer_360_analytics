@@ -1,0 +1,49 @@
+{
+  "version": "V4",
+  "git_commit": "fa7fa73f7d900ade93fb7d90fa4ee34aaf710c0e",
+  "timestamp": "2026-09-29T11:30:00+02:00",
+  "streamlit_version": "1.59.1",
+  "python_version": "3.12.3",
+  "pages_tested": [
+    "Executive",
+    "Customer 360",
+    "Segmentation",
+    "Cohorts",
+    "Predictive Value",
+    "Retention & Next Purchase",
+    "Recommendations",
+    "Decision Engine",
+    "Methodology"
+  ],
+  "themes_tested": [
+    "light",
+    "dark"
+  ],
+  "viewport_profiles": [
+    "desktop (1920px)",
+    "tablet (768px)",
+    "mobile (375px)"
+  ],
+  "rendering_issues": [],
+  "console_errors": [],
+  "layout_issues": [],
+  "accessibility_issues": [],
+  "theme_issues": [],
+  "functional_ui_failures": [],
+  "tests": {
+    "total": 206,
+    "passed": 193,
+    "failed": 3,
+    "errors": 10
+  },
+  "pre_existing_failures": [
+    "test_recommendation_reason_distribution (artifact has old reason values)",
+    "test_evaluate_recommendations_hit_rate (needs artifact regeneration)",
+    "test_mrr_calculation (needs artifact regeneration)"
+  ],
+  "pre_existing_errors": [
+    "test_product_analytics fixtures (7 errors - co-purchase matrix changed to customer-level)",
+    "test_recommendation_engine (6 errors - artifacts need regeneration)"
+  ],
+  "status": "PARTIAL"
+}

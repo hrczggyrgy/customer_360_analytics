@@ -156,10 +156,17 @@ def compute_association_lift(
     product_supports: pl.DataFrame,
     total_customers: int,
 ) -> pl.DataFrame:
-    """Compute true association lift for co-purchase pairs.
+    """Compute customer-level association lift for co-purchase pairs.
 
     Lift = P(A,B) / (P(A) * P(B)) = cooccurrence / (support_a * support_b / N)
-    where N = total customers
+    where:
+      - cooccurrence = number of customers buying both A and B (customer-level)
+      - support_a = number of customers buying A
+      - support_b = number of customers buying B
+      - N = total customers
+    
+    This reconciles the observation unit: both cooccurrence and supports
+    are computed at the CUSTOMER level.
     """
     # Join product supports
     cp = co_purchase.join(
@@ -172,7 +179,7 @@ def compute_association_lift(
         how="left",
     )
 
-    # Compute lift
+    # Compute lift using customer-level cooccurrence and supports
     cp = cp.with_columns([
         (pl.col("cooccurrence") * total_customers / (pl.col("support_a") * pl.col("support_b"))).alias("association_lift"),
     ])
@@ -264,16 +271,22 @@ def generate_recommendations_vectorized(
     # Take top-K
     top_k_recs = scored.filter(pl.col("rank") <= top_k).sort(["Customer ID", "rank"])
 
-    # Add reason
     top_k_recs = top_k_recs.with_columns([
-        pl.when(pl.col("co_purchase_score") > 0).then(pl.lit("co_purchase")).otherwise(pl.lit("popularity")).alias("reason"),
+        pl.when(pl.col("co_purchase_score") > 0)
+        .then(
+            pl.when(pl.col("popularity_score") > 0.1)
+            .then(pl.lit("co_purchase_blend"))
+            .otherwise(pl.lit("co_purchase_affinity"))
+        )
+        .otherwise(pl.lit("popularity_fallback"))
+        .alias("reason"),
     ])
 
     # Rename columns
     top_k_recs = top_k_recs.rename({
         "candidate_product": "recommended_product",
         "co_purchase_score": "co_purchase_score",
-        "supporting_products": "support",
+        "supporting_products": "supporting_products",
         "association_lift": "association_lift",
         "popularity_score": "popularity_score",
         "final_score": "score",
@@ -285,7 +298,7 @@ def generate_recommendations_vectorized(
         "rank",
         "score",
         "reason",
-        "support",
+        "supporting_products",
         "association_lift",
         "co_purchase_score",
         "popularity_score",
@@ -362,9 +375,9 @@ def generate_popularity_fallback(
     top_fallback = fallback_candidates.filter(pl.col("rank") <= top_k).sort(["Customer ID", "rank"])
 
     top_fallback = top_fallback.with_columns([
-        pl.lit("popularity").alias("reason"),
+        pl.lit("popularity_fallback").alias("reason"),
         pl.lit(0.0).alias("co_purchase_score"),
-        pl.lit(0).alias("support"),
+        pl.lit(0).alias("supporting_products"),
         pl.lit(None).alias("association_lift"),
         pl.col("popularity_score").alias("score"),
     ])
@@ -375,7 +388,7 @@ def generate_popularity_fallback(
         "rank",
         "score",
         "reason",
-        "support",
+        "supporting_products",
         "association_lift",
         "co_purchase_score",
         "popularity_score",
@@ -522,18 +535,28 @@ def evaluate_recommendations(
         metrics[f"hit_rate_at_{k}"] = float(hit_rate)
         metrics[f"recall_at_{k}"] = float(recall)
 
-    # MRR @ 10
     if top_k >= 10:
-        mrr_df = eval_df.filter(pl.col("rank") <= 10).filter(pl.col("hit"))
+        mrr_df = eval_df.filter(pl.col("rank") <= 10)
         mrr = mrr_df.group_by("Customer ID").agg(
-            (1.0 / pl.col("rank").min()).alias("rr")
+            pl.when(pl.col("hit").any())
+            .then(1.0 / pl.col("rank").filter(pl.col("hit")).min())
+            .otherwise(0.0)
+            .alias("rr")
         )["rr"].mean()
         metrics["mrr_at_10"] = float(mrr) if mrr is not None else 0.0
 
-    # Coverage
-    n_customers_eval = eval_df["Customer ID"].n_unique()
-    n_customers_with_recs = eval_df.filter(pl.col("rank").is_not_null())["Customer ID"].n_unique()
-    metrics["recommendation_coverage"] = float(n_customers_with_recs / n_customers_eval) if n_customers_eval > 0 else 0.0
+    eligible_customers = test_purchases.group_by("Customer ID").agg(
+        pl.col("test_count").sum().alias("total_test")
+    ).filter(pl.col("total_test") > 0)["Customer ID"]
+    
+    n_eligible = eligible_customers.n_unique()
+    n_with_recs = eval_df.filter(
+        (pl.col("rank").is_not_null()) & (pl.col("Customer ID").is_in(eligible_customers))
+    )["Customer ID"].n_unique()
+    
+    metrics["recommendation_coverage"] = float(n_with_recs / n_eligible) if n_eligible > 0 else 0.0
+    metrics["n_eligible_customers"] = int(n_eligible)
+    metrics["n_customers_with_recommendations"] = int(n_with_recs)
 
     # Catalog coverage: unique recommended products / eligible catalog size
     n_recommended_products = recs["recommended_product"].n_unique()
