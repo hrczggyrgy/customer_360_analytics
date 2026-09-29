@@ -7,11 +7,17 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from ..app_components import render_section_label, render_science_card, render_kpi_card, render_missing
+from ..ui import (
+    render_section_label,
+    render_science_card,
+    render_kpi_card,
+    render_kpi_row,
+    render_missing,
+    render_formatted_dataframe,
+)
 from ..app_data import get_registry
 from ..app_formatting import format_currency, format_count, format_probability
-from ..app_charts import (
-    base_layout,
+from ..ui.charts import (
     plot_missing,
     plot_histogram,
     plot_horizontal_bar,
@@ -19,7 +25,7 @@ from ..app_charts import (
 )
 
 
-def render():
+def render() -> None:
     """Render the Recommendations page."""
     registry = get_registry()
     
@@ -27,7 +33,13 @@ def render():
     product_metrics = registry.load_dataframe("product_analytics", "product_metrics.parquet")
     
     if recs is None or recs.empty:
-        st.warning("No recommendation outputs found. Run recommendation_engine.py first.")
+        from ..ui import render_empty_state
+        render_empty_state(
+            "No recommendations data",
+            "No recommendation outputs found.",
+            "Run the pipeline",
+            "python scripts/recommendation_engine.py",
+        )
         st.stop()
     
     # KPIs
@@ -35,13 +47,11 @@ def render():
     n_recs = len(recs)
     avg_recs = n_recs / n_customers if n_customers > 0 else 0
     
-    k1, k2, k3 = st.columns(3)
-    with k1:
-        render_kpi_card("Customers with recommendations", n_customers, formatter="count")
-    with k2:
-        render_kpi_card("Total recommendations", n_recs, formatter="count")
-    with k3:
-        render_kpi_card("Avg per customer", avg_recs, formatter="count")
+    render_kpi_row([
+        {"label": "Customers with recommendations", "value": n_customers, "formatter": "count"},
+        {"label": "Total recommendations", "value": n_recs, "formatter": "count"},
+        {"label": "Avg per customer", "value": avg_recs, "formatter": "count"},
+    ])
     
     # Reason distribution
     if "reason" in recs.columns:
@@ -79,7 +89,8 @@ def render():
         prod_info.columns = ["recommended_product", "Description", "Product Role", "Avg Price"]
         top_products = top_products.merge(prod_info, on="recommended_product", how="left")
     
-    st.dataframe(top_products, use_container_width=True, hide_index=True)
+    # Use formatted dataframe
+    render_formatted_dataframe(top_products)
     
     # Customer-level view
     st.markdown("#### Customer recommendations")
@@ -123,16 +134,9 @@ def render():
             display_cols.extend(["Avg Price", "Total Revenue"])
         
         display = customer_recs[display_cols].copy()
-        display["score"] = display["score"].apply(lambda x: f"{x:.4f}")
-        if "association_lift" in display.columns:
-            display["association_lift"] = display["association_lift"].apply(lambda x: f"{x:.2f}")
-        if "Avg Price" in display.columns:
-            display["Avg Price"] = display["Avg Price"].apply(lambda x: f"£{x:.2f}" if pd.notna(x) else "—")
-        if "Total Revenue" in display.columns:
-            display["Total Revenue"] = display["Total Revenue"].apply(lambda x: f"£{x:,.0f}" if pd.notna(x) else "—")
         
-        display.columns = [c.replace("_", " ").title() for c in display.columns]
-        st.dataframe(display, use_container_width=True, hide_index=True)
+        # Use formatted dataframe
+        render_formatted_dataframe(display)
     
     render_science_card(
         "Recommendation methodology",

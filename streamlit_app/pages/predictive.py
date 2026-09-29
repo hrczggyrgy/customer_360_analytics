@@ -8,11 +8,16 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from ..app_components import render_section_label, render_science_card, render_kpi_card, render_missing
+from ..ui import (
+    render_section_label,
+    render_science_card,
+    render_kpi_card,
+    render_kpi_row,
+    render_missing,
+)
 from ..app_data import get_registry
 from ..app_formatting import format_currency, format_count
-from ..app_charts import (
-    base_layout,
+from ..ui.charts import (
     plot_missing,
     plot_histogram_with_marginal,
     plot_uncertainty_band,
@@ -21,7 +26,7 @@ from ..app_charts import (
 )
 
 
-def render():
+def render() -> None:
     """Render the Predictive Value (CLV) page."""
     registry = get_registry()
     
@@ -40,7 +45,13 @@ def render():
                 clv = combined.copy()
     
     if clv is None or clv.empty:
-        st.warning("No CLV output was detected. Run clv_analysis.py first.")
+        from ..ui import render_empty_state
+        render_empty_state(
+            "No CLV data",
+            "No CLV output was detected.",
+            "Run the pipeline",
+            "python scripts/clv_analysis.py",
+        )
         st.stop()
     
     # Find CLV column
@@ -72,23 +83,18 @@ def render():
     clean = clv_values.dropna()
     
     # KPIs
-    kpis = st.columns(5)
-    with kpis[0]:
-        render_kpi_card("Customers", clean.size, formatter="count")
-    with kpis[1]:
-        render_kpi_card("Median CLV Proxy", clean.median(), formatter="currency")
-    with kpis[2]:
-        render_kpi_card("Mean CLV Proxy", clean.mean(), formatter="currency")
-    with kpis[3]:
-        render_kpi_card("Total CLV Proxy", clean.sum(), formatter="currency")
-    with kpis[4]:
-        render_kpi_card("90th percentile", clean.quantile(0.90), formatter="currency")
+    render_kpi_row([
+        {"label": "Customers", "value": clean.size, "formatter": "count"},
+        {"label": "Median CLV Proxy", "value": clean.median(), "formatter": "currency"},
+        {"label": "Mean CLV Proxy", "value": clean.mean(), "formatter": "currency"},
+        {"label": "Total CLV Proxy", "value": clean.sum(), "formatter": "currency"},
+        {"label": "90th percentile", "value": clean.quantile(0.90), "formatter": "currency"},
+    ])
     
     left, right = st.columns([1.15, 0.85])
     
     with left:
         st.markdown("#### CLV Proxy distribution")
-        plot_df = pd.DataFrame({"CLV Proxy": clean})
         
         fig = plot_histogram_with_marginal(clean.values, "CLV Proxy", "Customer value distribution")
         st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
@@ -141,7 +147,6 @@ def render():
             .sort_values("total_clv", ascending=False)
         )
         
-        from ..app_charts import plot_clv_by_segment
         fig = plot_clv_by_segment(
             profile,
             segment_col=seg_col,

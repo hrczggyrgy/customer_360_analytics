@@ -7,11 +7,16 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from ..app_components import render_section_label, render_science_card, render_kpi_card, render_missing
+from ..ui import (
+    render_section_label,
+    render_science_card,
+    render_kpi_card,
+    render_kpi_row,
+    render_missing,
+)
 from ..app_data import get_registry
 from ..app_formatting import format_probability, format_count
-from ..app_charts import (
-    base_layout,
+from ..ui.charts import (
     plot_missing,
     plot_histogram,
     plot_scatter,
@@ -20,9 +25,8 @@ from ..app_charts import (
 )
 
 
-def render():
+def render() -> None:
     """Render the Retention & Next Purchase page."""
-    import pandas as pd
     registry = get_registry()
     
     churn = registry.load_dataframe("churn")
@@ -36,7 +40,13 @@ def render():
         next_purchase = combined
     
     if churn is None and next_purchase is None:
-        st.warning("No churn or next-purchase outputs found. Run churn_next_purchase.py first.")
+        from ..ui import render_empty_state
+        render_empty_state(
+            "No retention data",
+            "No churn or next-purchase outputs found.",
+            "Run the pipeline",
+            "python scripts/churn_next_purchase.py",
+        )
         st.stop()
     
     tabs = st.tabs(["Risk profile", "Purchase propensity", "Risk vs propensity", "Model diagnostics"])
@@ -52,31 +62,24 @@ def render():
             if ccol:
                 values = pd.to_numeric(churn[ccol], errors="coerce").dropna()
                 
-                k = st.columns(4)
-                with k[0]:
-                    render_kpi_card("Customers scored", len(values), formatter="count")
-                with k[1]:
-                    render_kpi_card("Median churn risk", values.median(), formatter="probability")
-                with k[2]:
-                    render_kpi_card("High risk", (values >= 0.70).mean(), formatter="percent")
-                with k[3]:
-                    render_kpi_card("Very high risk", (values >= 0.85).mean(), formatter="percent")
+                render_kpi_row([
+                    {"label": "Customers scored", "value": len(values), "formatter": "count"},
+                    {"label": "Median churn risk", "value": values.median(), "formatter": "probability"},
+                    {"label": "High risk (≥70%)", "value": (values >= 0.70).mean(), "formatter": "percent"},
+                    {"label": "Very high risk (≥85%)", "value": (values >= 0.85).mean(), "formatter": "percent"},
+                ])
                 
                 fig = plot_histogram(values, "Churn probability", "Predicted probability of churn / inactivity")
                 st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
                 
-                st.markdown("""
-                <div class='science-card'>
-                    <h4>Why survival modeling is different from a churn label</h4>
-                    <p>
-                    A survival formulation models the timing of continued activity
-                    and accounts for the fact that newer customers have had less
-                    time to experience an observed lapse. This is preferable to
-                    defining churn with one arbitrary recency threshold and calling
-                    that label ground truth.
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
+                render_science_card(
+                    "Why survival modeling is different from a churn label",
+                    "A survival formulation models the timing of continued activity "
+                    "and accounts for the fact that newer customers have had less "
+                    "time to experience an observed lapse. This is preferable to "
+                    "defining churn with one arbitrary recency threshold and calling "
+                    "that label ground truth."
+                )
             else:
                 render_missing("Churn output found but no probability field was recognized.")
         else:
@@ -93,15 +96,12 @@ def render():
             if pcol:
                 values = pd.to_numeric(next_purchase[pcol], errors="coerce").dropna()
                 
-                k = st.columns(4)
-                with k[0]:
-                    render_kpi_card("Customers scored", len(values), formatter="count")
-                with k[1]:
-                    render_kpi_card("Median probability", values.median(), formatter="probability")
-                with k[2]:
-                    render_kpi_card("High propensity", (values >= 0.70).mean(), formatter="percent")
-                with k[3]:
-                    render_kpi_card("Low propensity", (values < 0.30).mean(), formatter="percent")
+                render_kpi_row([
+                    {"label": "Customers scored", "value": len(values), "formatter": "count"},
+                    {"label": "Median probability", "value": values.median(), "formatter": "probability"},
+                    {"label": "High propensity (≥70%)", "value": (values >= 0.70).mean(), "formatter": "percent"},
+                    {"label": "Low propensity (<30%)", "value": (values < 0.30).mean(), "formatter": "percent"},
+                ])
                 
                 fig = plot_histogram(values, "Next-purchase probability", "Predicted probability of the next purchase event")
                 st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
@@ -200,17 +200,12 @@ def render():
             })
         
         if diagnostics:
-            import pandas as pd
             st.dataframe(pd.DataFrame(diagnostics), use_container_width=True, hide_index=True)
         
-        st.markdown("""
-        <div class='science-card'>
-            <h4>Validation principle</h4>
-            <p>
-            Predictive retention and purchase models should be evaluated with
-            time-based backtesting. A random train/test split can leak future
-            customer behavior into the training population and make model
-            performance look artificially strong.
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+        render_science_card(
+            "Validation principle",
+            "Predictive retention and purchase models should be evaluated with "
+            "time-based backtesting. A random train/test split can leak future "
+            "customer behavior into the training population and make model "
+            "performance look artificially strong."
+        )

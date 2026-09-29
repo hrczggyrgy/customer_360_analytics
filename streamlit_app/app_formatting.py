@@ -157,6 +157,9 @@ COLUMN_FORMAT_MAP: dict[str, str] = {
     "days_since_last_purchase": SemanticType.DURATION_DAYS,
     "days_since_last_sale": SemanticType.DURATION_DAYS,
     
+    # Decision confidence is a score, not a probability
+    "decision_confidence": SemanticType.SCORE,
+    
     # Duration fields (seconds - treated as days for display)
     "interpurchase_seconds": SemanticType.DURATION_DAYS,
     "mean_interpurchase_seconds": SemanticType.DURATION_DAYS,
@@ -259,7 +262,8 @@ def format_percent(value: Any, decimals: int = 1) -> str:
     """Format a percentage value (already in 0-100 or 0-1 scale).
     
     Unlike format_probability, this assumes the value may already be in
-    percentage scale (e.g., 23.5 = 23.5%).
+    percentage scale (e.g., 23.5 = 23.5%). Values > 1 are treated as
+    already in percentage scale; values <= 1 are multiplied by 100.
     
     Args:
         value: Percentage value
@@ -542,17 +546,11 @@ def auto_format(value: Any, column_name: str = "") -> str:
     elif sem_type == SemanticType.SCORE:
         return format_score(value)
     else:
-        # Fallback: try to format based on value type
+        # No heuristic fallback - return raw value as string
         if isinstance(value, (int, np.integer)):
             return format_count(value)
         elif isinstance(value, (float, np.floating)):
-            # Heuristic for float values
-            if abs(value) <= 1.5:
-                return format_probability(value)
-            elif abs(value) < 100:
-                return format_ratio(value)
-            else:
-                return format_currency(value)
+            return f"{value:.2f}"
         elif isinstance(value, (datetime, date, pd.Timestamp)):
             return format_date(value)
         elif isinstance(value, str):

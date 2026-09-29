@@ -7,13 +7,14 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from ..app_components import (
+from ..ui import (
     render_customer_header,
     render_customer_metric_row,
     render_customer_selector,
     render_science_card,
     render_evidence_table,
     render_missing,
+    render_empty_state,
 )
 from ..app_data import get_registry
 from ..app_formatting import (
@@ -21,9 +22,10 @@ from ..app_formatting import (
     format_probability,
     format_percent,
     format_count,
+    format_days,
     auto_format,
 )
-from ..app_charts import (
+from ..ui.charts import (
     base_layout,
     plot_missing,
     plot_dual_axis_line_bar,
@@ -31,17 +33,22 @@ from ..app_charts import (
 )
 
 
-def render():
+def render() -> None:
     """Render the Customer 360 page."""
     registry = get_registry()
     
     # Load data
     customer_df = registry.load_dataframe("customer_360")
-    # Use canonical customer-month panel from customer_360 output, not cohorts
+    # Use canonical customer-month panel from customer_360 output
     monthly = registry.load_dataframe("customer_360", "customer_month.parquet")
     
     if customer_df is None or customer_df.empty:
-        st.warning("No customer-level table was detected. Run customer_360.py first.")
+        render_empty_state(
+            "No customer data",
+            "No customer-level table was detected.",
+            "Run the pipeline",
+            "python scripts/customer_360.py",
+        )
         st.stop()
     
     id_col = "Customer ID"
@@ -55,9 +62,7 @@ def render():
         except (ValueError, TypeError):
             pass
     
-    st.markdown(f"Data source: **Customer 360** — `{len(customer_df):,}` customers")
-    
-    ids = customer_df[id_col].dropna().astype(int).tolist()
+    st.caption(f"Data source: **Customer 360** — `{len(customer_df):,}` customers")
     
     # Customer selector
     selected_id = render_customer_selector(customer_df, id_col, default_customer=default_customer)
@@ -65,13 +70,10 @@ def render():
     if selected_id is None:
         st.stop()
     
-    # Update query params for deep linking
-    st.query_params["customer_id"] = str(selected_id)
-    
     row = customer_df[customer_df[id_col].astype(int) == int(selected_id)]
     
     if row.empty:
-        st.warning("Customer not found.")
+        render_missing("Customer not found.")
         st.stop()
     
     row = row.iloc[0]
@@ -90,11 +92,13 @@ def render():
     purchase_value = safe_get(row, "next_purchase_probability", "next_purchase_probability_30d", "purchase_probability_30d")
     action_value = safe_get(row, "recommended_action_capped", "final_action", "recommended_action")
     
-    # Customer header
+    # Customer header with key metrics
     render_customer_header(
         customer_id=int(selected_id),
         segment=segment_value,
         action=action_value,
+        clv=pd.to_numeric(clv_value, errors="coerce") if clv_value is not None else None,
+        churn_risk=pd.to_numeric(churn_value, errors="coerce") if churn_value is not None else None,
     )
     
     # Metric cards
@@ -130,44 +134,16 @@ def render():
                     hist[revenue_col] = pd.to_numeric(hist[revenue_col], errors="coerce")
                     hist = hist.dropna(subset=[month_col]).sort_values(month_col)
                     
-                    import plotly.graph_objects as go
-                    fig = go.Figure()
-                    fig.add_trace(go.Bar(
-                        x=hist[month_col],
-                        y=hist[revenue_col],
-                        name="Net revenue",
-                        hovertemplate=(
-                            "%{x|%Y-%m}<br>"
-                            "Net revenue: %{y:,.2f}<extra></extra>"
-                        ),
-                    ))
-                    
-                    if order_col in hist.columns:
-                        orders = pd.to_numeric(hist[order_col], errors="coerce")
-                        fig.add_trace(go.Scatter(
-                            x=hist[month_col],
-                            y=orders,
-                            mode="lines+markers",
-                            name="Orders",
-                            yaxis="y2",
-                        ))
-                        fig.update_layout(
-                            yaxis2=dict(
-                                title="Orders",
-                                overlaying="y",
-                                side="right",
-                                showgrid=False,
-                            )
-                        )
-                    
-                    fig.update_xaxes(title="Calendar month")
-                    fig.update_yaxes(title="Net revenue")
-                    
-                    st.plotly_chart(
-                        base_layout(fig, title="Observed monthly customer economics", height=460),
-                        use_container_width=True,
-                        config=PLOTLY_CONFIG,
+                    fig = plot_dual_axis_line_bar(
+                        hist,
+                        x_col=month_col,
+                        bar_col=revenue_col,
+                        line_col=order_col,
+                        title="Observed monthly customer economics",
+                        bar_name="Net revenue",
+                        line_name="Orders",
                     )
+                    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
                 else:
                     plot_missing("No monthly event history was found for this customer.")
             else:
@@ -207,7 +183,7 @@ def render():
             elif "clv" in label.lower():
                 display = format_currency(value)
             elif "days" in label.lower():
-                display = format_duration_months(value)
+                display = format_days(value)
             else:
                 display = auto_format(value)
             
@@ -223,16 +199,3 @@ def render():
             "the action layer looks for a commercially meaningful signal and a "
             "sufficiently strong model-confidence context."
         )
-
-
-def format_duration_months(value: Any) -> str:
-    """Format duration in months."""
-    if value is None or (isinstance(value, float) and (value != value or abs(value) == float('inf'))):
-        return "—"
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return "—"
-    if value < 1:
-        return f"{value * 30:.0f} days"
-    return f"{value:.1f} mo"

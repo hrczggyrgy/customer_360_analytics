@@ -139,7 +139,7 @@ class TestFormatters:
         assert auto_format(25, "retention") == "25.0%"
         assert auto_format(1.5, "ratio") == "1.50x"
         assert auto_format(1000, "orders") == "1,000"
-        assert auto_format(0.5, "unknown_column") == "50.0%"
+        assert auto_format(0.5, "unknown_column") == "0.50"
 
     def test_infer_semantic_type(self):
         assert infer_semantic_type("revenue") == SemanticType.CURRENCY

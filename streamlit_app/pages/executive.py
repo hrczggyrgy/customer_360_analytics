@@ -7,29 +7,26 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from ..app_components import (
+from ..ui import (
     render_section_label,
     render_science_card,
     render_kpi_card,
+    render_kpi_row,
     render_action_summary_table,
+    render_missing,
 )
 from ..app_data import get_registry
-from ..app_formatting import (
-    format_currency,
-    format_probability,
-    format_percent,
-    auto_format,
-)
-from ..app_charts import (
-    base_layout,
-    plot_missing,
+from ..app_formatting import format_currency, format_probability, format_percent, auto_format
+from ..ui.charts import (
     plot_concentration_curve,
     plot_action_allocation,
     PLOTLY_CONFIG,
+    apply_plotly_theme,
 )
+import plotly.graph_objects as go
 
 
-def render():
+def render() -> None:
     """Render the Executive page."""
     registry = get_registry()
     
@@ -122,25 +119,15 @@ def render():
             if not match.empty:
                 retention_3 = float(pd.to_numeric(match, errors="coerce").iloc[0])
     
-    # KPIs
-    kpi_cols = st.columns(5)
+    # KPIs - using render_kpi_row for consistent layout
+    render_kpi_row([
+        {"label": "Customers", "value": n_customers, "formatter": "count"},
+        {"label": "Portfolio CLV", "value": clv_total, "formatter": "currency"},
+        {"label": "Mean churn risk", "value": churn_mean, "formatter": "probability"},
+        {"label": "Mean next-purchase probability", "value": np_mean, "formatter": "probability"},
+        {"label": "Month-3 retention", "value": retention_3, "formatter": "percent"},
+    ])
     
-    with kpi_cols[0]:
-        render_kpi_card("Customers", n_customers, formatter="count")
-    
-    with kpi_cols[1]:
-        render_kpi_card("Portfolio CLV", clv_total, formatter="currency")
-    
-    with kpi_cols[2]:
-        render_kpi_card("Mean churn risk", churn_mean, formatter="probability")
-    
-    with kpi_cols[3]:
-        render_kpi_card("Mean next-purchase probability", np_mean, formatter="probability")
-    
-    with kpi_cols[4]:
-        render_kpi_card("Month-3 retention", retention_3, formatter="percent")
-    
-    st.markdown("")
     render_section_label("Portfolio signals")
     
     left, right = st.columns([1.05, 0.95])
@@ -160,42 +147,14 @@ def render():
                 plot_df = plot_df.dropna(subset=[clv_col])
                 
                 if not plot_df.empty:
-                    plot_df["rank"] = plot_df[clv_col].rank(pct=True)
-                    plot_df = plot_df.sort_values(clv_col, ascending=False)
-                    total_positive_clv = max(float(plot_df[clv_col].clip(lower=0).sum()), 1e-9)
-                    plot_df["cumulative_clv_share"] = (
-                        plot_df[clv_col].clip(lower=0).cumsum() / total_positive_clv
-                    )
-                    
-                    sample = plot_df.iloc[::max(1, len(plot_df) // 1000)].copy()
-                    
-                    import plotly.graph_objects as go
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=sample["rank"],
-                        y=sample["cumulative_clv_share"],
-                        mode="lines",
-                        line=dict(width=2),
-                        name="Cumulative CLV share",
-                        hovertemplate=(
-                            "Customer percentile: %{x:.0%}<br>"
-                            "Cumulative CLV share: %{y:.0%}<extra></extra>"
-                        ),
-                    ))
-                    fig.add_hline(y=0.50, line_dash="dot", annotation_text="50% of value")
-                    fig.update_xaxes(tickformat=".0%", title="Customer percentile by CLV")
-                    fig.update_yaxes(tickformat=".0%", title="Cumulative CLV share")
-                    st.plotly_chart(
-                        base_layout(fig, title="How concentrated is customer value?"),
-                        use_container_width=True,
-                        config=PLOTLY_CONFIG,
-                    )
+                    fig = plot_concentration_curve(plot_df[clv_col].values)
+                    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
                 else:
-                    plot_missing("CLV values are empty.")
+                    render_missing("CLV values are empty.")
             else:
-                plot_missing("A CLV field was not detected.")
+                render_missing("A CLV field was not detected.")
         else:
-            plot_missing("Run customer_360.py or clv_analysis.py to populate the executive value view.")
+            render_missing("Run customer_360.py or clv_analysis.py to populate the executive value view.")
     
     with right:
         st.markdown("#### Decision allocation")
@@ -213,7 +172,6 @@ def render():
                     break
             
             if action_col and customer_col:
-                from ..app_charts import plot_action_allocation
                 fig = plot_action_allocation(
                     action_summary[[action_col, customer_col]].rename(
                         columns={action_col: "action", customer_col: "count"}
@@ -224,27 +182,18 @@ def render():
                 )
                 st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
             else:
-                plot_missing("Action summary columns were not recognized.")
+                render_missing("Action summary columns were not recognized.")
         else:
-            plot_missing("Run decision_engine.py to populate the commercial action layer.")
+            render_missing("Run decision_engine.py to populate the commercial action layer.")
     
-    # Science cards
-    st.markdown("")
+    # Science cards - reduced to 2 primary cards
     render_section_label("What the portfolio is answering")
     
-    cards = st.columns(4)
+    cards = st.columns(2)
     card_data = [
         (
             "Who behaves differently?",
             "Behavioral segmentation compresses customer heterogeneity into interpretable behavioral states rather than relying only on recency, frequency, and monetary value.",
-        ),
-        (
-            "Which cohorts persist?",
-            "Cohort analysis separates acquisition quality from customer age and shows whether revenue and customer activity decay over time.",
-        ),
-        (
-            "Who is worth retaining?",
-            "Predicted Future Net Revenue (CLV Proxy) combines expected future economics with uncertainty, allowing value to be discussed as a distribution rather than a single deterministic number.",
         ),
         (
             "What should happen next?",
@@ -255,3 +204,20 @@ def render():
     for col, (title, body) in zip(cards, card_data):
         with col:
             render_science_card(title, body)
+    
+    # Additional context in expander
+    with st.expander("More analytical context"):
+        more_cards = [
+            (
+                "Which cohorts persist?",
+                "Cohort analysis separates acquisition quality from customer age and shows whether revenue and customer activity decay over time.",
+            ),
+            (
+                "Who is worth retaining?",
+                "Predicted Future Net Revenue (CLV Proxy) combines expected future economics with uncertainty, allowing value to be discussed as a distribution rather than a single deterministic number.",
+            ),
+        ]
+        cols = st.columns(2)
+        for col, (title, body) in zip(cols, more_cards):
+            with col:
+                render_science_card(title, body)

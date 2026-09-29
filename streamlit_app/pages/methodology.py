@@ -7,7 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from ..app_components import (
+from ..ui import (
     render_section_label,
     render_science_card,
     HERO_COPY,
@@ -15,7 +15,7 @@ from ..app_components import (
 from ..app_data import get_registry
 
 
-def render():
+def render() -> None:
     """Render the Methodology page."""
     registry = get_registry()
     
@@ -72,9 +72,9 @@ def render():
     for number_, title, body in steps:
         st.markdown(
             f"""
-            <div style='border-left: 3px solid #315efb; padding: 9px 0 9px 14px; margin: 8px 0;'>
-                <strong>{number_} · {title}</strong>
-                <div style='color: #697386; font-size: 0.85rem; line-height: 1.45;'>{body}</div>
+            <div style='border-left: 3px solid var(--primary); padding: 9px 0 9px 14px; margin: 8px 0;'>
+                <strong style='color: var(--text-primary);'>{number_} · {title}</strong>
+                <div style='color: var(--text-secondary); font-size: 0.85rem; line-height: 1.45; margin-top: 4px;'>{body}</div>
             </div>
             """,
             unsafe_allow_html=True,

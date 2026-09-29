@@ -7,15 +7,15 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from ..app_components import (
+from ..ui import (
     render_section_label,
     render_science_card,
     render_kpi_card,
+    render_kpi_row,
 )
 from ..app_data import get_registry
 from ..app_formatting import format_percent, format_count, auto_format
-from ..app_charts import (
-    base_layout,
+from ..ui.charts import (
     plot_missing,
     plot_pca_scatter,
     plot_segment_heatmap,
@@ -24,7 +24,7 @@ from ..app_charts import (
 )
 
 
-def render():
+def render() -> None:
     """Render the Segmentation page."""
     registry = get_registry()
     
@@ -33,7 +33,13 @@ def render():
     pca = registry.load_dataframe("segmentation", "pca_coordinates.csv")
     
     if segments is None and profiles is None and pca is None:
-        st.warning("No segmentation outputs found. Run customer_segmentation.py first.")
+        from ..ui import render_empty_state
+        render_empty_state(
+            "No segmentation data",
+            "No segmentation outputs found.",
+            "Run the pipeline",
+            "python scripts/customer_segmentation.py",
+        )
         st.stop()
     
     if segments is not None:
@@ -42,23 +48,19 @@ def render():
         seg_summary = (
             segments.groupby(seg_col, dropna=False)
             .size()
-            .reset_index(name="customers")
+            .reset_index()
         )
+        seg_summary.columns = [seg_col, "customers"]
         
-        seg_cols = st.columns(4)
-        with seg_cols[0]:
-            render_kpi_card("Customers", len(segments), formatter="count")
-        with seg_cols[1]:
-            render_kpi_card("Segments", seg_summary[seg_col].nunique(), formatter="count")
-        with seg_cols[2]:
-            render_kpi_card("Largest segment", seg_summary["customers"].max(), formatter="count")
-        with seg_cols[3]:
-            # Noise detection - use numeric segment == -1
-            if "segment" in segments.columns:
-                noise_mask = segments["segment"] == -1
-            else:
-                noise_mask = segments[seg_col].astype(str).str.contains("noise", case=False, na=False)
-            render_kpi_card("Noise / low-density", noise_mask.mean(), formatter="percent")
+        # KPIs
+        noise_mask = segments["segment"] == -1 if "segment" in segments.columns else segments[seg_col].astype(str).str.contains("noise", case=False, na=False)
+        
+        render_kpi_row([
+            {"label": "Customers", "value": len(segments), "formatter": "count"},
+            {"label": "Segments", "value": seg_summary[seg_col].nunique(), "formatter": "count"},
+            {"label": "Largest segment", "value": seg_summary["customers"].max(), "formatter": "count"},
+            {"label": "Noise / low-density", "value": noise_mask.mean(), "formatter": "percent"},
+        ])
         
         st.markdown("#### Segment size")
         seg_summary = seg_summary.sort_values("customers", ascending=True)
