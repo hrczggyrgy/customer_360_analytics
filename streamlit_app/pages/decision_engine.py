@@ -7,17 +7,18 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from ..app_components import (
+from ..ui import (
     render_section_label,
     render_science_card,
     render_kpi_card,
+    render_kpi_row,
     render_missing,
     render_action_summary_table,
+    render_formatted_dataframe,
 )
 from ..app_data import get_registry
 from ..app_formatting import format_currency, format_probability, format_count
-from ..app_charts import (
-    base_layout,
+from ..ui.charts import (
     plot_missing,
     plot_action_allocation,
     plot_decision_scatter,
@@ -28,7 +29,7 @@ from ..app_charts import (
 )
 
 
-def render():
+def render() -> None:
     """Render the Decision Engine page."""
     registry = get_registry()
     
@@ -36,7 +37,13 @@ def render():
     action_summary = registry.load_dataframe("decision_engine", "action_summary.csv")
     
     if decision is None:
-        st.warning("No decision-engine output found. Run decision_engine.py first.")
+        from ..ui import render_empty_state
+        render_empty_state(
+            "No decision engine data",
+            "No decision-engine output found.",
+            "Run the pipeline",
+            "python scripts/decision_engine.py",
+        )
         st.stop()
     
     action_col = "recommended_action_capped" if "recommended_action_capped" in decision.columns else None
@@ -68,34 +75,29 @@ def render():
         st.stop()
     
     # KPIs
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    active_mask = ~decision[action_col].astype(str).str.startswith("monitor", na=False)
+    median_priority = pd.to_numeric(decision[priority_col], errors="coerce").median() if priority_col else None
+    total_clv = pd.to_numeric(decision[decision_clv], errors="coerce").sum() if decision_clv else None
     
-    with kpi1:
-        render_kpi_card("Customers scored", len(decision), formatter="count")
-    
-    with kpi2:
-        active_actions = ~decision[action_col].astype(str).str.startswith("monitor", na=False)
-        render_kpi_card("Active policy rows", active_actions.sum(), formatter="count")
-    
-    with kpi3:
-        if priority_col:
-            render_kpi_card("Median priority", pd.to_numeric(decision[priority_col], errors="coerce").median(), formatter="count", column_name="priority_score")
-        else:
-            render_kpi_card("Median priority", "—")
-    
-    with kpi4:
-        if decision_clv:
-            render_kpi_card("CLV represented", pd.to_numeric(decision[decision_clv], errors="coerce").sum(), formatter="currency")
-        else:
-            render_kpi_card("CLV represented", "—")
+    render_kpi_row([
+        {"label": "Customers scored", "value": len(decision), "formatter": "count"},
+        {"label": "Active policy rows", "value": int(active_mask.sum()), "formatter": "count"},
+        {"label": "Median priority", "value": median_priority, "formatter": "score", "column_name": "priority_score"},
+        {"label": "CLV represented", "value": total_clv, "formatter": "currency"},
+    ])
     
     render_section_label("Action allocation")
     
     left, right = st.columns([0.95, 1.05])
     
     with left:
-        fig = plot_action_allocation(decision, action_col=action_col)
-        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        if action_col:
+            action_counts = decision[action_col].value_counts().reset_index()
+            action_counts.columns = [action_col, "count"]
+            fig = plot_action_allocation(action_counts, action_col=action_col, count_col="count")
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        else:
+            render_missing("Action column not found.")
     
     with right:
         if decision_clv and d_churn and priority_col:
@@ -123,22 +125,8 @@ def render():
     
     display = targets[preferred_columns].copy()
     
-    # Format columns
-    for column in display.columns:
-        if column in {d_churn, d_next, "reactivation_probability", "decision_confidence"}:
-            display[column] = pd.to_numeric(display[column], errors="coerce").apply(
-                lambda x: format_probability(x) if pd.notna(x) else "—"
-            )
-        elif column == decision_clv:
-            display[column] = pd.to_numeric(display[column], errors="coerce").apply(
-                lambda x: format_currency(x) if pd.notna(x) else "—"
-            )
-        elif column == priority_col:
-            display[column] = pd.to_numeric(display[column], errors="coerce").apply(
-                lambda x: f"{x:.1f}" if pd.notna(x) else "—"
-            )
-    
-    st.dataframe(display, use_container_width=True, hide_index=True)
+    # Use formatted dataframe
+    render_formatted_dataframe(display)
     
     render_science_card(
         "What this engine does — and does not do",

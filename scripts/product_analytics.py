@@ -75,15 +75,29 @@ def build_product_metrics(
     tx: pl.DataFrame,
     min_sales: int = 10,
 ) -> pl.DataFrame:
-    """Build comprehensive product-level metrics from canonical transactions."""
+    """Build comprehensive product-level metrics from canonical transactions.
+
+    One row per StockCode. Description conflicts resolved by most frequent non-null.
+    """
     LOGGER.info("Building product-level metrics...")
 
     # Filter to clean sales
     sales = tx.filter(pl.col("is_clean_sale"))
 
-    # Product-level aggregations
+    # Resolve description conflicts: most frequent non-null per StockCode
+    description_map = (
+        sales.filter(pl.col("Description").is_not_null() & (pl.col("Description") != ""))
+        .group_by(["StockCode", "Description"])
+        .len()
+        .sort(["StockCode", "len"], descending=[False, True])
+        .group_by("StockCode")
+        .first()
+        .select(["StockCode", "Description"])
+    )
+
+    # Product-level aggregations (one row per StockCode)
     product_metrics = (
-        sales.group_by(["StockCode", "Description"])
+        sales.group_by("StockCode")
         .agg(
             [
                 pl.col("gross_merchandise_revenue").sum().alias("total_revenue"),
@@ -97,19 +111,21 @@ def build_product_metrics(
                 pl.col("Price").quantile(0.75).alias("price_q75"),
                 pl.col("InvoiceDate").min().alias("first_sale_date"),
                 pl.col("InvoiceDate").max().alias("last_sale_date"),
-                pl.col("Customer ID").n_unique().alias("customer_penetration_raw"),
             ]
         )
         .filter(pl.col("total_invoices") >= min_sales)
     )
 
-    # Calculate repeat customer rate
-    # For each product, what % of customers bought it more than once?
-    customer_product = sales.group_by(["Customer ID", "StockCode"]).agg(
-        pl.len().alias("purchase_count")
+    # Join resolved description
+    product_metrics = product_metrics.join(description_map, on="StockCode", how="left")
+
+    # Calculate repeat customer rate using DISTINCT purchase invoices (not line events)
+    # For each product, what % of customers bought it on 2+ distinct invoices?
+    customer_product_invoices = sales.group_by(["Customer ID", "StockCode"]).agg(
+        pl.col("Invoice").n_unique().alias("distinct_purchase_invoices")
     )
     repeat_customers = (
-        customer_product.filter(pl.col("purchase_count") > 1)
+        customer_product_invoices.filter(pl.col("distinct_purchase_invoices") >= 2)
         .group_by("StockCode")
         .agg(pl.col("Customer ID").n_unique().alias("repeat_customers"))
     )
@@ -119,7 +135,7 @@ def build_product_metrics(
         pl.col("repeat_customers").fill_null(0).cast(pl.Int64)
     )
 
-    # Repeat customer rate
+    # Repeat customer rate: customers with >=2 distinct purchase invoices / unique customers
     product_metrics = product_metrics.with_columns(
         (pl.col("repeat_customers") / pl.col("unique_customers")).alias("repeat_customer_rate"),
     )
@@ -186,7 +202,17 @@ def build_product_metrics(
 
 
 def classify_product_roles(product_metrics: pl.DataFrame) -> pl.DataFrame:
-    """Classify products into evidence-based behavioral roles."""
+    """Classify products into evidence-based behavioral roles with explicit mutually exclusive rules.
+
+    Precedence order (first match wins):
+    1. Acquisition: High penetration (Q75), low repeat rate (Q25)
+    2. Retention: High repeat rate (Q75) AND high revenue (Q75) — loyal high-value
+    3. Repeat: High repeat rate (Q75) — frequent repurchase, not high revenue
+    4. Basket builder: High velocity (Q75) AND moderate repeat (Q25) — co-purchase signal
+    5. Niche high-value: High price (Q75), low penetration (< Q75*0.5)
+    6. Volatile: Low repeat (Q25), low velocity (< Q75*0.5)
+    7. Other: everything else
+    """
     LOGGER.info("Classifying product roles...")
 
     out = product_metrics.clone()
@@ -199,64 +225,41 @@ def classify_product_roles(product_metrics: pl.DataFrame) -> pl.DataFrame:
     penetration_q75 = out.select(pl.col("customer_penetration").quantile(0.75)).item()
     repeat_q25 = out.select(pl.col("repeat_customer_rate").quantile(0.25)).item()
 
-    # Role classification logic (prioritized)
-    out = out.with_columns(
-        pl.lit("other").alias("product_role"),
-    )
-
-    # 1. Acquisition: High penetration, low repeat rate (first purchase for many)
+    # Single when-then-otherwise chain for mutual exclusivity
     out = out.with_columns(
         pl.when(
+            # 1. Acquisition: High penetration, low repeat rate
             (pl.col("customer_penetration") >= penetration_q75) &
             (pl.col("repeat_customer_rate") < repeat_q25) &
             (pl.col("total_revenue") > 0)
-        ).then(pl.lit("acquisition")).otherwise(pl.col("product_role")).alias("product_role"),
-    )
-
-    # 2. Repeat: High repeat customer rate
-    out = out.with_columns(
-        pl.when(
+        ).then(pl.lit("acquisition"))
+        .when(
+            # 2. Retention: High repeat + high revenue (loyal high-value)
             (pl.col("repeat_customer_rate") >= repeat_q75) &
-            (pl.col("product_role") == "other")
-        ).then(pl.lit("repeat")).otherwise(pl.col("product_role")).alias("product_role"),
-    )
-
-    # 3. Retention: High repeat rate + high revenue + purchased by loyal customers
-    # (simplified: high repeat rate + high revenue)
-    out = out.with_columns(
-        pl.when(
-            (pl.col("repeat_customer_rate") >= repeat_q75) &
-            (pl.col("total_revenue") >= revenue_q75) &
-            (pl.col("product_role") == "other")
-        ).then(pl.lit("retention")).otherwise(pl.col("product_role")).alias("product_role"),
-    )
-
-    # 4. Basket builder: High velocity + moderate repeat (co-purchase signal)
-    out = out.with_columns(
-        pl.when(
+            (pl.col("total_revenue") >= revenue_q75)
+        ).then(pl.lit("retention"))
+        .when(
+            # 3. Repeat: High repeat rate (not already retention)
+            (pl.col("repeat_customer_rate") >= repeat_q75)
+        ).then(pl.lit("repeat"))
+        .when(
+            # 4. Basket builder: High velocity + moderate repeat
             (pl.col("invoices_per_month") >= velocity_q75) &
-            (pl.col("repeat_customer_rate") >= repeat_q25) &
-            (pl.col("product_role") == "other")
-        ).then(pl.lit("basket_builder")).otherwise(pl.col("product_role")).alias("product_role"),
-    )
-
-    # 5. Niche high-value: Low volume, high price, low penetration
-    out = out.with_columns(
-        pl.when(
+            (pl.col("repeat_customer_rate") >= repeat_q25)
+        ).then(pl.lit("basket_builder"))
+        .when(
+            # 5. Niche high-value: High price, low penetration
             (pl.col("avg_price") >= price_q75) &
             (pl.col("customer_penetration") < penetration_q75 * 0.5) &
-            (pl.col("total_revenue") > 0) &
-            (pl.col("product_role") == "other")
-        ).then(pl.lit("niche_high_value")).otherwise(pl.col("product_role")).alias("product_role"),
-    )
-
-    # 6. Volatile: Low repeat, low velocity, irregular
-    out = out.with_columns(
-        pl.when(
+            (pl.col("total_revenue") > 0)
+        ).then(pl.lit("niche_high_value"))
+        .when(
+            # 6. Volatile: Low repeat, low velocity
             (pl.col("repeat_customer_rate") < repeat_q25) &
-            (pl.col("invoices_per_month") < velocity_q75 * 0.5) &
-            (pl.col("product_role") == "other")
-        ).then(pl.lit("volatile")).otherwise(pl.col("product_role")).alias("product_role"),
+            (pl.col("invoices_per_month") < velocity_q75 * 0.5)
+        ).then(pl.lit("volatile"))
+        .otherwise(pl.lit("other"))
+        .alias("product_role")
     )
 
     # Log distribution

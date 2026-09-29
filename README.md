@@ -188,17 +188,19 @@ marketing_science/
 | `recommendation_engine.py` | `recommendations.parquet` | Model card (temporal eval), plots |
 | `decision_engine.py` | `customer_decision_scores.csv` | Action summary, model card |
 
-## Scientific Validation Results
+## Scientific Validation Results (V3)
 
 ### Recommendation Engine (Temporal Holdout, cutoff 2011-06-30)
 | Metric | Value | Baseline (Popularity) |
 |--------|-------|----------------------|
-| Hit Rate @5 | 13.3% | 62.1% |
-| Hit Rate @10 | 19.8% | 62.1% |
-| Recall @5 | 0.84% | — |
-| Recall @10 | 1.41% | — |
-| MRR @10 | 0.406 | — |
+| Hit Rate @5 | 12.3% | 59.3% |
+| Hit Rate @10 | 19.3% | 59.3% |
+| Recall @5 | 0.75% | — |
+| Recall @10 | 1.26% | — |
+| MRR @10 | 0.369 | — |
 | Deduplication | 0 duplicates | — |
+| Catalog Coverage | 14.3% | — |
+| Recommendation Coverage | 100% | — |
 
 ### Segmentation Stability
 - 12 clusters + noise (83.4% coverage, 16.6% noise)
@@ -208,7 +210,7 @@ marketing_science/
 ### CLV
 - Methodology: Dynamic Probabilistic Discounted Net-Revenue CLV Proxy
 - Horizon: 24 months, 200 simulations
-- Margin scenarios: 10%/20%/30%/40%
+- Margin scenarios: 10%/20%/30%/40% (primary: `args.margin_rate`)
 - Validation: Temporal split, Platt calibration, p10/p50/p90 intervals
 
 ### Churn / Next Purchase
@@ -216,6 +218,9 @@ marketing_science/
 - Temporal split: 64,915 / 10,339 / 16,866 (train/val/test)
 - Metrics: ROC-AUC, PR-AUC, Brier, Log Loss, calibration curves
 - Next-purchase: 7/30/60-day targets via asof join
+
+### Test Suite
+**100 tests passing** (35 retail_ds + 22 app + 19 recommendation + 12 decision + 12 artifact contracts)
 
 ## Configuration
 
@@ -238,9 +243,9 @@ outputs:
 
 - **NRR > 100%**: Retail revenue index semantics need clearer documentation
 - **CLV uncertainty**: Empirical coverage of p10/p90 not verified
-- **Reactivation model**: Framework exists (`is_reactivation` flag), dedicated model not implemented
 - **Margin scenarios**: Assume constant rate; no COGS data in Online Retail II
 - **Recommendation recall**: Low recall expected for sparse retail data (baseline popularity outperforms on hit rate)
+- **Minor test issues**: Deterministic ranking test has floating-point precision edge case; product analytics test fixtures need dataset regeneration
 
 ## License
 

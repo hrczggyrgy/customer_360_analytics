@@ -32,6 +32,7 @@ from retail_ds.cleaning import clean_transactions, add_calendar_fields
 from retail_ds.transactions import classify_transactions, compute_financial_measures
 from retail_ds.customer_month import build_customer_month_panel
 from retail_ds.validation import run_all_validations, assert_validations_pass
+from scripts.product_analytics import build_co_purchase_matrix
 
 
 SEED = 42
@@ -89,8 +90,24 @@ def build_customer_history(tx: pl.DataFrame) -> pl.DataFrame:
     return customer_product
 
 
-def load_co_purchase_matrix(co_purchase_path: Path, max_partners: int, min_support: int) -> tuple:
-    """Load and process co-purchase matrix with true association lift."""
+def load_co_purchase_matrix(
+    co_purchase_path: Path,
+    max_partners: int,
+    min_support: int,
+    product_popularity_df: pl.DataFrame = None,
+) -> tuple:
+    """Load and process co-purchase matrix with true association lift.
+
+    Args:
+        co_purchase_path: Path to co-purchase matrix parquet
+        max_partners: Max co-purchase partners per product
+        min_support: Minimum co-occurrence support
+        product_popularity_df: Optional DataFrame with StockCode, unique_customers for true support
+
+    Returns:
+        Tuple of (co_purchase_top, product_supports)
+        product_supports has columns: StockCode, product_support (unique customers)
+    """
     LOGGER.info(f"Loading co-purchase matrix from {co_purchase_path}")
 
     if not co_purchase_path.exists():
@@ -106,10 +123,17 @@ def load_co_purchase_matrix(co_purchase_path: Path, max_partners: int, min_suppo
     # Filter by minimum support
     co_purchase = co_purchase.filter(pl.col("cooccurrence") >= min_support)
 
-    # Compute product supports for lift calculation
-    product_supports = co_purchase.group_by("product_a").agg(
-        pl.col("cooccurrence").sum().alias("product_support")
-    ).rename({"product_a": "StockCode"})
+    # Compute TRUE product supports: unique customers per product
+    if product_popularity_df is not None and "unique_customers" in product_popularity_df.columns:
+        product_supports = product_popularity_df.select(["StockCode", "unique_customers"]).rename(
+            {"unique_customers": "product_support"}
+        )
+    else:
+        # Fallback: sum of co-occurrences (less accurate)
+        LOGGER.warning("No product popularity data provided; using co-occurrence sum for support (approximate)")
+        product_supports = co_purchase.group_by("product_a").agg(
+            pl.col("cooccurrence").sum().alias("product_support")
+        ).rename({"product_a": "StockCode"})
 
     # Make symmetric: for each pair (a,b), add (b,a) with same cooccurrence
     reverse = co_purchase.rename({"product_a": "product_b", "product_b": "product_a"})
@@ -384,7 +408,6 @@ def temporal_holdout_evaluation(
     tx: pl.DataFrame,
     customer_product_train: pl.DataFrame,
     co_purchase: pl.DataFrame,
-    product_popularity: pl.DataFrame,
     cutoff_date: str,
     top_k: int,
     fallback_pool_size: int,
@@ -395,7 +418,6 @@ def temporal_holdout_evaluation(
         tx: Full canonical transactions
         customer_product_train: Customer-product history up to cutoff
         co_purchase: Co-purchase matrix from training period
-        product_popularity: Product popularity from training period
         cutoff_date: Evaluation cutoff date
         top_k: Top-K for evaluation
         fallback_pool_size: Fallback pool size
@@ -405,9 +427,21 @@ def temporal_holdout_evaluation(
     """
     LOGGER.info(f"Running temporal holdout evaluation with cutoff {cutoff_date}...")
 
-    # Generate recommendations for training period
+    # Compute TRUE product popularity from TRAINING data only
+    train_sales = tx.filter(pl.col("is_clean_sale") & (pl.col("InvoiceDate") <= pl.lit(cutoff_date).str.strptime(pl.Datetime)))
+    product_popularity_train = (
+        train_sales.group_by("StockCode")
+        .agg(pl.col("Customer ID").n_unique().alias("unique_customers"))
+        .sort("unique_customers", descending=True)
+    )
+    max_pop = product_popularity_train.select(pl.col("unique_customers").max()).item()
+    product_popularity_train = product_popularity_train.with_columns([
+        (pl.col("unique_customers") / max_pop).alias("popularity_score"),
+    ])
+
+    # Generate recommendations for training period using TRAINING popularity
     recs_train = generate_recommendations_vectorized(
-        customer_product_train, co_purchase, product_popularity, top_k, fallback_pool_size
+        customer_product_train, co_purchase, product_popularity_train, top_k, fallback_pool_size
     )
 
     # Get test period transactions (after cutoff)
@@ -425,15 +459,19 @@ def temporal_holdout_evaluation(
         pl.len().alias("test_count")
     )
 
+    # Catalog size: eligible products from training period
+    catalog_size = train_sales.select(pl.col("StockCode").n_unique()).item()
+
     # Evaluate
     metrics = evaluate_recommendations(
-        recs_train, test_purchases, top_k
+        recs_train, test_purchases, top_k, catalog_size
     )
 
-    # Add baseline comparison
-    baseline_metrics = evaluate_popularity_baseline(
-        test_purchases, top_k
+    # Add baseline comparison using TRAINING popularity
+    baseline_metrics = evaluate_popularity_baseline_from_training(
+        test_purchases, product_popularity_train, top_k
     )
+
     metrics["baseline"] = baseline_metrics
 
     return metrics
@@ -443,6 +481,7 @@ def evaluate_recommendations(
     recs: pl.DataFrame,
     test_purchases: pl.DataFrame,
     top_k: int,
+    catalog_size: int = None,
 ) -> dict:
     """Evaluate recommendations against test purchases."""
 
@@ -496,16 +535,43 @@ def evaluate_recommendations(
     n_customers_with_recs = eval_df.filter(pl.col("rank").is_not_null())["Customer ID"].n_unique()
     metrics["recommendation_coverage"] = float(n_customers_with_recs / n_customers_eval) if n_customers_eval > 0 else 0.0
 
-    # Catalog coverage
+    # Catalog coverage: unique recommended products / eligible catalog size
     n_recommended_products = recs["recommended_product"].n_unique()
-    total_products = recs["recommended_product"].n_unique()
-    metrics["catalog_coverage"] = float(n_recommended_products / total_products) if total_products > 0 else 0.0
+    if catalog_size and catalog_size > 0:
+        metrics["catalog_coverage"] = float(n_recommended_products / catalog_size)
+    else:
+        metrics["catalog_coverage"] = float(n_recommended_products)
 
     metrics["n_customers_evaluated"] = int(n_customers_eval)
     metrics["n_customers_with_recommendations"] = int(n_customers_with_recs)
     metrics["n_recommendations"] = int(recs.height)
 
     return metrics
+
+
+def evaluate_popularity_baseline_from_training(
+    test_purchases: pl.DataFrame,
+    product_popularity_train: pl.DataFrame,
+    top_k: int,
+) -> dict:
+    """Evaluate global popularity baseline using TRAINING period popularity."""
+    top_pop = product_popularity_train.head(top_k)["StockCode"].to_list()
+
+    test_cust = test_purchases.group_by("Customer ID").agg(
+        pl.col("StockCode").alias("test_products"),
+    )
+
+    hits = 0
+    total = 0
+    for row in test_cust.iter_rows(named=True):
+        cust_products = set(row["test_products"])
+        if cust_products & set(top_pop):
+            hits += 1
+        total += 1
+
+    return {
+        "hit_rate": hits / total if total > 0 else 0.0,
+    }
 
 
 def evaluate_popularity_baseline(
@@ -640,10 +706,18 @@ def main() -> None:
         tx = compute_financial_measures(tx)
 
     # -------------------------------------------------------------------------
+    # Load product metrics for true popularity
+    # -------------------------------------------------------------------------
+    if product_metrics_path.exists():
+        product_metrics_for_popularity = pl.read_parquet(product_metrics_path)
+    else:
+        product_metrics_for_popularity = None
+
+    # -------------------------------------------------------------------------
     # Load co-purchase matrix and compute association lift
     # -------------------------------------------------------------------------
     co_purchase, product_supports = load_co_purchase_matrix(
-        co_purchase_path, args.max_partners, args.min_support
+        co_purchase_path, args.max_partners, args.min_support, product_metrics_for_popularity
     )
 
     total_customers = tx.filter(pl.col("is_clean_sale")).select(pl.col("Customer ID").n_unique()).item()
@@ -655,16 +729,28 @@ def main() -> None:
     customer_product = build_customer_history(tx)
 
     # -------------------------------------------------------------------------
-    # Product popularity (for fallback)
+    # Product popularity (for fallback) — TRUE popularity from transaction data
     # -------------------------------------------------------------------------
-    product_popularity = co_purchase.group_by("product_a").agg(
-        pl.col("cooccurrence").sum().alias("total_cooccurrence")
-    ).rename({"product_a": "StockCode"}).sort("total_cooccurrence", descending=True)
-
-    max_pop = product_popularity.select(pl.col("total_cooccurrence").max()).item()
-    product_popularity = product_popularity.with_columns([
-        (pl.col("total_cooccurrence") / max_pop).alias("popularity_score"),
-    ]).rename({"total_cooccurrence": "pop_score"})
+    # Load product metrics for true popularity (unique customers per product)
+    product_metrics_popularity = pl.read_parquet(product_metrics_path)
+    if "unique_customers" in product_metrics_popularity.columns:
+        product_popularity = product_metrics_popularity.select(["StockCode", "unique_customers"]).sort(
+            "unique_customers", descending=True
+        )
+        max_pop = product_popularity.select(pl.col("unique_customers").max()).item()
+        product_popularity = product_popularity.with_columns([
+            (pl.col("unique_customers") / max_pop).alias("popularity_score"),
+        ])
+    else:
+        # Fallback if unique_customers not available
+        LOGGER.warning("unique_customers not in product_metrics; using co-occurrence as popularity proxy")
+        product_popularity = co_purchase.group_by("product_a").agg(
+            pl.col("cooccurrence").sum().alias("total_cooccurrence")
+        ).rename({"product_a": "StockCode"}).sort("total_cooccurrence", descending=True)
+        max_pop = product_popularity.select(pl.col("total_cooccurrence").max()).item()
+        product_popularity = product_popularity.with_columns([
+            (pl.col("total_cooccurrence") / max_pop).alias("popularity_score"),
+        ]).rename({"total_cooccurrence": "pop_score"})
 
     # -------------------------------------------------------------------------
     # Generate recommendations
@@ -717,11 +803,24 @@ def main() -> None:
         tx_train = tx.filter(pl.col("InvoiceDate") <= cutoff)
         customer_product_train = build_customer_history(tx_train)
 
+        # Build co-purchase matrix from training data only
+        co_purchase_train = build_co_purchase_matrix(tx_train, args.min_support, args.max_partners)
+        total_customers_train = tx_train.filter(pl.col("is_clean_sale")).select(pl.col("Customer ID").n_unique()).item()
+
+        # Compute TRUE product supports from training data
+        product_supports_train = (
+            tx_train.filter(pl.col("is_clean_sale"))
+            .group_by("StockCode")
+            .agg(pl.col("Customer ID").n_unique().alias("product_support"))
+        )
+
+        # Compute lift for training co-purchase matrix
+        co_purchase_train = compute_association_lift(co_purchase_train, product_supports_train, total_customers_train)
+
         evaluation_results = temporal_holdout_evaluation(
             tx=tx,
             customer_product_train=customer_product_train,
-            co_purchase=co_purchase.select(["product_a", "product_b", "cooccurrence", "association_lift"]),
-            product_popularity=product_popularity,
+            co_purchase=co_purchase_train.select(["product_a", "product_b", "cooccurrence", "association_lift"]),
             cutoff_date=args.eval_cutoff,
             top_k=args.top_k,
             fallback_pool_size=args.fallback_pool_size,
@@ -729,17 +828,17 @@ def main() -> None:
         LOGGER.info(f"Temporal evaluation results: {evaluation_results}")
 
     # -------------------------------------------------------------------------
-    # Enrich with product details
+    # Enrich with product details (use deduplicated all_recs)
     # -------------------------------------------------------------------------
-    recommendations = enrich_recommendations(recommendations, product_metrics_path)
+    all_recs = enrich_recommendations(all_recs, product_metrics_path)
 
     # -------------------------------------------------------------------------
     # Outputs
     # -------------------------------------------------------------------------
     LOGGER.info("Writing outputs...")
 
-    recommendations.write_parquet(output_dir / "recommendations.parquet")
-    recommendations.write_csv(output_dir / "recommendations.csv")
+    all_recs.write_parquet(output_dir / "recommendations.parquet")
+    all_recs.write_csv(output_dir / "recommendations.csv")
 
     # Model card
     model_card = {
@@ -750,13 +849,13 @@ def main() -> None:
         "max_partners_per_product": args.max_partners,
         "fallback_pool_size": args.fallback_pool_size,
         "score_weights": {"co_purchase": 0.7, "popularity": 0.3},
-        "n_customers": recommendations.select("Customer ID").n_unique(),
-        "n_recommendations": recommendations.height,
-        "avg_recommendations_per_customer": recommendations.height / recommendations.select("Customer ID").n_unique(),
-        "reason_distribution": recommendations.group_by("reason").len().to_dicts(),
+        "n_customers": all_recs.select("Customer ID").n_unique(),
+        "n_recommendations": all_recs.height,
+        "avg_recommendations_per_customer": all_recs.height / all_recs.select("Customer ID").n_unique(),
+        "reason_distribution": all_recs.group_by("reason").len().to_dicts(),
         "association_lift_stats": {
-            "mean": float(recommendations.select(pl.col("association_lift").mean()).item()) if "association_lift" in recommendations.columns else None,
-            "median": float(recommendations.select(pl.col("association_lift").median()).item()) if "association_lift" in recommendations.columns else None,
+            "mean": float(all_recs.select(pl.col("association_lift").mean()).item()) if "association_lift" in all_recs.columns else None,
+            "median": float(all_recs.select(pl.col("association_lift").median()).item()) if "association_lift" in all_recs.columns else None,
         },
     }
 
@@ -773,7 +872,7 @@ def main() -> None:
     # Plots
     if not args.skip_plots:
         LOGGER.info("Generating plots...")
-        save_plots(output_dir, recommendations)
+        save_plots(output_dir, all_recs)
 
     LOGGER.info("Recommendation engine complete. Outputs in %s", output_dir)
 

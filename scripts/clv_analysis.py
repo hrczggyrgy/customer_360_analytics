@@ -666,10 +666,10 @@ def main() -> None:
             "monthly_summary": monthly_summary,
         }
 
-    # Use first margin scenario for main outputs (or default if included)
-    default_margin = margin_scenarios[0]
-    main_clv = all_clv_results[f"margin_{default_margin:.0%}"]["clv_summary"]
-    main_monthly = all_clv_results[f"margin_{default_margin:.0%}"]["monthly_summary"]
+    # Use args.margin_rate for main outputs (explicit CLI parameter)
+    main_margin = args.margin_rate
+    main_clv = all_clv_results[f"margin_{main_margin:.0%}"]["clv_summary"]
+    main_monthly = all_clv_results[f"margin_{main_margin:.0%}"]["monthly_summary"]
 
     # -------------------------------------------------------------------------
     # Outputs

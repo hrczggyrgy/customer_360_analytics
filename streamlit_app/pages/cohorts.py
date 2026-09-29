@@ -7,11 +7,16 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from ..app_components import render_section_label, render_science_card, render_kpi_card, render_missing
+from ..ui import (
+    render_section_label,
+    render_science_card,
+    render_kpi_card,
+    render_kpi_row,
+    render_missing,
+)
 from ..app_data import get_registry
 from ..app_formatting import format_count, format_percent
-from ..app_charts import (
-    base_layout,
+from ..ui.charts import (
     plot_missing,
     plot_retention_matrix,
     plot_decay_curve,
@@ -19,7 +24,7 @@ from ..app_charts import (
 )
 
 
-def render():
+def render() -> None:
     """Render the Cohorts page."""
     registry = get_registry()
     
@@ -29,52 +34,48 @@ def render():
     scorecard = registry.load_dataframe("cohorts", "cohort_scorecard.csv")
     
     if all(x is None for x in [logo_file, nrr_file, decay, scorecard]):
-        st.warning("No cohort outputs found. Run cohort_analysis.py first.")
+        from ..ui import render_empty_state
+        render_empty_state(
+            "No cohort data",
+            "No cohort outputs found.",
+            "Run the pipeline",
+            "python scripts/cohort_analysis.py",
+        )
         st.stop()
     
-    c1, c2, c3, c4 = st.columns(4)
+    # KPIs
+    retention_3 = None
+    if decay is not None:
+        age_col = "age_month" if "age_month" in decay.columns else None
+        logo_col = "weighted_logo_retention" if "weighted_logo_retention" in decay.columns else "logo_retention"
+        if age_col and logo_col and logo_col in decay.columns:
+            match = decay[pd.to_numeric(decay[age_col], errors="coerce") == 3]
+            if not match.empty:
+                retention_3 = float(pd.to_numeric(match[logo_col], errors="coerce").iloc[0])
     
-    with c1:
-        if scorecard is not None:
-            n_col = "cohort_month" if "cohort_month" in scorecard.columns else scorecard.columns[0]
-            render_kpi_card("Acquisition cohorts", scorecard[n_col].nunique(), formatter="count")
-        else:
-            render_kpi_card("Acquisition cohorts", "—")
+    nrr_6 = None
+    if decay is not None:
+        age_col = "age_month" if "age_month" in decay.columns else None
+        nrr_col = "weighted_net_revenue_retention" if "weighted_net_revenue_retention" in decay.columns else "net_revenue_retention"
+        if age_col and nrr_col and nrr_col in decay.columns:
+            match = decay[pd.to_numeric(decay[age_col], errors="coerce") == 6]
+            if not match.empty:
+                nrr_6 = float(pd.to_numeric(match[nrr_col], errors="coerce").iloc[0])
     
-    with c2:
-        # Compute actual month-3 logo retention from decay curve
-        retention_3 = None
-        if decay is not None:
-            age_col = "age_month" if "age_month" in decay.columns else None
-            logo_col = "weighted_logo_retention" if "weighted_logo_retention" in decay.columns else "logo_retention"
-            if age_col and logo_col and logo_col in decay.columns:
-                match = decay[pd.to_numeric(decay[age_col], errors="coerce") == 3]
-                if not match.empty:
-                    retention_3 = float(pd.to_numeric(match[logo_col], errors="coerce").iloc[0])
-        render_kpi_card("Month-3 logo retention", retention_3, formatter="percent")
+    max_age = None
+    if decay is not None:
+        age_col = "age_month" if "age_month" in decay.columns else None
+        if age_col:
+            max_age = int(pd.to_numeric(decay[age_col], errors="coerce").max())
     
-    with c3:
-        # Compute actual month-6 net revenue retention
-        nrr_6 = None
-        if decay is not None:
-            age_col = "age_month" if "age_month" in decay.columns else None
-            nrr_col = "weighted_net_revenue_retention" if "weighted_net_revenue_retention" in decay.columns else "net_revenue_retention"
-            if age_col and nrr_col and nrr_col in decay.columns:
-                match = decay[pd.to_numeric(decay[age_col], errors="coerce") == 6]
-                if not match.empty:
-                    nrr_6 = float(pd.to_numeric(match[nrr_col], errors="coerce").iloc[0])
-        render_kpi_card("Month-6 revenue retention", nrr_6, formatter="percent")
+    n_cohorts = scorecard["cohort_month"].nunique() if scorecard is not None and "cohort_month" in scorecard.columns else None
     
-    with c4:
-        if decay is not None:
-            age_col = "age_month" if "age_month" in decay.columns else None
-            if age_col:
-                max_age = int(pd.to_numeric(decay[age_col], errors="coerce").max())
-                render_kpi_card("Observed age horizon", max_age, formatter="count")
-            else:
-                render_kpi_card("Observed age horizon", "—")
-        else:
-            render_kpi_card("Observed age horizon", "—")
+    render_kpi_row([
+        {"label": "Acquisition cohorts", "value": n_cohorts, "formatter": "count"},
+        {"label": "Month-3 logo retention", "value": retention_3, "formatter": "percent"},
+        {"label": "Month-6 revenue retention", "value": nrr_6, "formatter": "percent"},
+        {"label": "Observed age horizon", "value": max_age, "formatter": "count"},
+    ])
     
     tabs = st.tabs(["Logo retention", "Revenue retention", "Maturity curve", "Cohort scorecard"])
     

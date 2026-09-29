@@ -39,12 +39,13 @@ def sample_transactions():
     invoices = [f"INV{i:06d}" for i in range(100)]
     invoices += [f"C{i:05d}" for i in range(20)]
 
+    # Use dates within the Online Retail II dataset range (2009-2011)
     data = {
         "Invoice": np.random.choice(invoices, n),
         "StockCode": np.random.choice([f"PROD{i:04d}" for i in range(50)], n),
         "Description": [f"Product {i}" for i in np.random.randint(0, 50, n)],
         "Quantity": np.random.randint(-5, 10, n),
-        "InvoiceDate": pd.date_range("2020-01-01", periods=n, freq="12h"),
+        "InvoiceDate": pd.date_range("2010-01-01", periods=n, freq="12h"),
         "Price": np.random.uniform(0.5, 100, n),
         "Customer ID": np.random.randint(1000, 1200, n),
         "Country": np.random.choice(["UK", "France", "Germany", "USA"], n),
@@ -317,8 +318,8 @@ class TestPointInTimeFeatures:
         """Features at date should only use data up to that date."""
         _, dense, _ = build_customer_month_panel(canonical_transactions)
 
-        # Use a prediction date in the middle of data
-        pred_date = "2020-06-30"
+        # Use a prediction date in the middle of synthetic data (2010 range)
+        pred_date = "2010-06-30"
         features = build_point_in_time_features(
             canonical_transactions, pred_date, dense, [1, 3, 6]
         )
@@ -342,7 +343,7 @@ class TestPointInTimeFeatures:
     def test_leakage_safety_check(self, canonical_transactions):
         """validate_point_in_time_safety should identify leakage."""
         _, dense, _ = build_customer_month_panel(canonical_transactions)
-        pred_date = "2020-06-30"
+        pred_date = "2010-06-30"
         features = build_point_in_time_features(
             canonical_transactions, pred_date, dense, [1, 3, 6]
         )
@@ -414,7 +415,7 @@ class TestBacktesting:
         """Rolling origin splits should create valid temporal splits."""
         _, dense, metadata = build_customer_month_panel(canonical_transactions)
 
-        origins = ["2020-06-30", "2020-09-30"]
+        origins = ["2010-06-30", "2010-09-30"]
         splits = rolling_origin_split(
             dense, "calendar_month", origins,
             val_horizon_months=2, test_horizon_months=2
@@ -430,7 +431,7 @@ class TestBacktesting:
         """Applying splits should partition data correctly."""
         _, dense, _ = build_customer_month_panel(canonical_transactions)
 
-        origins = ["2020-06-30"]
+        origins = ["2010-06-30"]
         splits = rolling_origin_split(
             dense, "calendar_month", origins,
             val_horizon_months=2, test_horizon_months=2
@@ -459,8 +460,8 @@ class TestTemporalLeakage:
         """Point-in-time features must not use future data."""
         _, dense, _ = build_customer_month_panel(canonical_transactions)
 
-        pred_dt = pl.lit("2020-06-30").str.strptime(pl.Datetime)
-        pred_date = "2020-06-30"
+        pred_dt = pl.lit("2010-06-30").str.strptime(pl.Datetime)
+        pred_date = "2010-06-30"
         features = build_point_in_time_features(
             canonical_transactions, pred_date, dense, [1, 3, 6]
         )
@@ -489,7 +490,7 @@ class TestTemporalLeakage:
         """Train/val/test splits should have no temporal overlap."""
         _, dense, _ = build_customer_month_panel(canonical_transactions)
 
-        origins = ["2020-06-30", "2020-09-30"]
+        origins = ["2010-06-30", "2010-09-30"]
         splits = rolling_origin_split(
             dense, "calendar_month", origins,
             val_horizon_months=2, test_horizon_months=2
@@ -580,8 +581,31 @@ class TestDataIntegrity:
 
     def test_probability_bounds(self, canonical_transactions):
         """Probability outputs should be in [0, 1]."""
-        # This would be tested after model training
-        pass
+        # Test that validation catches out-of-bounds probabilities
+        from retail_ds.validation import validate_probability_bounds
+        
+        # Create a test dataframe with probability columns
+        import polars as pl
+        test_df = pl.DataFrame({
+            "Customer ID": [1, 2, 3],
+            "churn_probability": [0.1, 0.5, 0.9],
+            "survival_3m": [0.9, 0.5, 0.1],
+            "next_purchase_30d": [0.8, 0.3, 0.0],
+        })
+        
+        # Should pass with valid probabilities
+        result = validate_probability_bounds(test_df, ["churn_probability", "survival_3m", "next_purchase_30d"])
+        assert result.passed
+        
+        # Should fail with out-of-bounds
+        bad_df = test_df.with_columns(pl.lit(1.5).alias("churn_probability"))
+        result = validate_probability_bounds(bad_df, ["churn_probability"])
+        assert not result.passed
+        assert "above_1" in str(result.details.get("issues", [])) or "above_1" in str(result.message)
+        
+        bad_df = test_df.with_columns(pl.lit(-0.1).alias("survival_3m"))
+        result = validate_probability_bounds(bad_df, ["survival_3m"])
+        assert not result.passed
 
     def test_cohort_month_consistency(self, canonical_transactions):
         """Cohort month should be first active month for each customer."""

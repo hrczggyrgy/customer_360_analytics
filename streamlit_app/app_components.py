@@ -216,7 +216,7 @@ def render_customer_selector(
     default_customer: Optional[int] = None,
     key_prefix: str = "customer_selector",
 ) -> Optional[int]:
-    """Render customer search + selectbox component.
+    """Render customer search-first selector with filtered results.
     
     Args:
         customer_df: DataFrame with customer data
@@ -238,30 +238,52 @@ def render_customer_selector(
         st.warning("No valid customer IDs found.")
         return None
     
-    # Search input
+    # Search input - primary interaction
     search_key = f"{key_prefix}_search"
     search = st.text_input(
         "Search customer ID",
-        value="",
-        placeholder="e.g. 12345",
+        value=str(default_customer) if default_customer else "",
+        placeholder="Type customer ID (e.g. 12345) or leave blank to browse",
         key=search_key,
+        help="Enter a customer ID directly, or leave empty to select from all customers",
     )
     
-    # Selectbox
+    # Filter IDs based on search
+    if search.strip().isdigit():
+        search_id = int(search.strip())
+        if search_id in ids:
+            filtered_ids = [search_id]
+        else:
+            filtered_ids = []
+            st.info(f"No customer found with ID {search_id}")
+    else:
+        filtered_ids = ids
+    
+    # Show count of filtered results
+    if search.strip():
+        st.caption(f"Showing {len(filtered_ids)} of {len(ids)} customers")
+    
+    # Selectbox on filtered results (or all if no search)
     select_key = f"{key_prefix}_select"
+    
+    if not filtered_ids:
+        st.selectbox(
+            "Customer",
+            options=[],
+            disabled=True,
+            placeholder="No matching customers",
+            key=select_key,
+        )
+        return None
     
     # Determine default index
     default_idx = 0
-    if default_customer and default_customer in ids:
-        default_idx = ids.index(default_customer)
-    elif search.strip().isdigit():
-        search_id = int(search.strip())
-        if search_id in ids:
-            default_idx = ids.index(search_id)
+    if default_customer and default_customer in filtered_ids:
+        default_idx = filtered_ids.index(default_customer)
     
     selected_id = st.selectbox(
         "Customer",
-        options=ids,
+        options=filtered_ids,
         index=default_idx,
         format_func=lambda x: f"Customer {x}",
         key=select_key,

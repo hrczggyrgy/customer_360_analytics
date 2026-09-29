@@ -1,8 +1,7 @@
 """
-Consistent Plotly Charts for Retail Customer Intelligence Streamlit App.
+Centralized Plotly Charts for Retail Customer Intelligence Streamlit App.
 
-This module provides standardized chart functions with consistent design tokens,
-color schemes, and styling across all pages.
+All charts use the centralized theme system for consistent styling across light/dark modes.
 """
 
 from __future__ import annotations
@@ -13,86 +12,27 @@ import plotly.express as px
 import plotly.graph_objects as go
 from typing import List, Optional, Dict, Any
 
+from .theme import (
+    apply_plotly_theme,
+    get_plotly_theme,
+    PLOTLY_CONFIG,
+    SEGMENT_PALETTE,
+    ACTION_COLORS,
+    get_segment_color,
+    get_action_color,
+    get_current_theme,
+    SEED,
+    get_color_tokens,
+    TYPOGRAPHY,
+)
 
-# =============================================================================
-# DESIGN TOKENS
-# =============================================================================
-
-CHART_COLORS = {
-    "primary": "#315efb",
-    "secondary": "#697386",
-    "success": "#218739",
-    "warning": "#a56600",
-    "danger": "#e11d48",
-    "muted": "#697386",
-    "background": "#fbfcfe",
-    "panel": "#ffffff",
-    "line": "#e4e7ec",
-}
-
-ACTION_COLORS = {
-    "protect_value": "#218739",
-    "accelerate_purchase": "#315efb",
-    "reactivate": "#a56600",
-    "cross_sell": "#7c3aed",
-    "nurture": "#0ea5e9",
-    "monitor": "#697386",
-}
-
-SEGMENT_PALETTE = [
-    "#315efb", "#218739", "#a56600", "#7c3aed",
-    "#0ea5e9", "#e11d48", "#f97316", "#84cc16",
-    "#ec4899", "#6366f1", "#14b8a6", "#f43f5e",
-]
-
-PLOTLY_CONFIG = {
-    "displaylogo": False,
-    "modeBarButtonsToRemove": ["lasso2d", "select2d"],
-}
-
-SEED = 42
+# Set random seed for reproducible sampling
 np.random.seed(SEED)
 
 
 # =============================================================================
-# BASE LAYOUT
+# BASE CHART FUNCTIONS
 # =============================================================================
-
-def base_layout(
-    fig: go.Figure,
-    height: int = 420,
-    title: Optional[str] = None,
-) -> go.Figure:
-    """Apply consistent base layout to a Plotly figure."""
-    fig.update_layout(
-        height=height,
-        margin=dict(l=10, r=10, t=50 if title else 20, b=10),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(
-            family="Inter, ui-sans-serif, system-ui, sans-serif",
-            color="#172033",
-        ),
-        title=(
-            dict(
-                text=title,
-                x=0,
-                xanchor="left",
-                font=dict(size=17, color="#172033"),
-            )
-            if title
-            else None
-        ),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.01,
-            xanchor="left",
-            x=0,
-        ),
-    )
-    return fig
-
 
 def plot_missing(message: str = "Required output is not available yet.") -> None:
     """Render a missing data placeholder."""
@@ -116,13 +56,13 @@ def plot_histogram(
     fig = px.histogram(
         x=data,
         nbins=nbins,
-        labels={x_label: x_label},
+        labels={"x": x_label},
     )
     
     if x_format:
         fig.update_xaxes(tickformat=x_format)
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 def plot_histogram_with_marginal(
@@ -137,10 +77,10 @@ def plot_histogram_with_marginal(
         x=data,
         nbins=nbins,
         marginal="box",
-        labels={x_label: x_label},
+        labels={"x": x_label},
     )
     fig.update_xaxes(rangemode="tozero")
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -155,6 +95,8 @@ def plot_horizontal_bar(
     height: int = 470,
     labels: Optional[dict] = None,
     orientation: str = "h",
+    color_col: Optional[str] = None,
+    color_map: Optional[dict] = None,
 ) -> go.Figure:
     """Create a consistent horizontal bar chart."""
     fig = px.bar(
@@ -163,8 +105,10 @@ def plot_horizontal_bar(
         y=y_col,
         orientation=orientation,
         labels=labels or {},
+        color=color_col,
+        color_discrete_map=color_map,
     )
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 def plot_stacked_bar(
@@ -184,7 +128,7 @@ def plot_stacked_bar(
         color=color_col,
         labels=labels or {},
     )
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -205,6 +149,7 @@ def plot_scatter(
     x_format: Optional[str] = None,
     y_format: Optional[str] = None,
     log_x: bool = False,
+    color_map: Optional[dict] = None,
 ) -> go.Figure:
     """Create a consistent scatter plot with optional sampling."""
     plot_df = df
@@ -219,6 +164,7 @@ def plot_scatter(
         size=size_col,
         opacity=opacity,
         labels=labels or {},
+        color_discrete_map=color_map,
     )
     
     if log_x:
@@ -229,7 +175,7 @@ def plot_scatter(
     if y_format:
         fig.update_yaxes(tickformat=y_format)
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 def plot_scatter_with_quadrants(
@@ -242,6 +188,7 @@ def plot_scatter_with_quadrants(
     title: str,
     height: int = 560,
     labels: Optional[dict] = None,
+    color_map: Optional[dict] = None,
 ) -> go.Figure:
     """Create scatter plot with quadrant reference lines."""
     fig = px.scatter(
@@ -251,10 +198,11 @@ def plot_scatter_with_quadrants(
         color=color_col,
         opacity=0.40,
         labels=labels or {},
+        color_discrete_map=color_map,
     )
     
-    fig.add_vline(x=x_threshold, line_dash="dot")
-    fig.add_hline(y=y_threshold, line_dash="dot")
+    fig.add_vline(x=x_threshold, line_dash="dot", line_color="rgba(100,100,100,0.5)")
+    fig.add_hline(y=y_threshold, line_dash="dot", line_color="rgba(100,100,100,0.5)")
     
     if labels:
         if x_col in labels:
@@ -262,7 +210,7 @@ def plot_scatter_with_quadrants(
         if y_col in labels:
             fig.update_yaxes(title=labels[y_col])
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -287,7 +235,7 @@ def plot_heatmap(
         zmin=zmin,
         zmax=zmax,
     )
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 def plot_segment_heatmap(
@@ -307,8 +255,9 @@ def plot_segment_heatmap(
         heat,
         aspect="auto",
         labels={"x": "Behavioral feature", "y": "Segment", "color": "Score"},
+        color_continuous_scale="RdBu",
     )
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -337,7 +286,7 @@ def plot_line(
     if y_format:
         fig.update_yaxes(tickformat=y_format)
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 def plot_dual_axis_line_bar(
@@ -349,15 +298,20 @@ def plot_dual_axis_line_bar(
     height: int = 460,
     bar_name: str = "Revenue",
     line_name: str = "Orders",
+    bar_format: str = "£,.2f",
+    line_format: str = ",.0f",
 ) -> go.Figure:
     """Create a dual-axis chart with bars and line."""
+    tokens = get_plotly_theme()["layout"]
+    
     fig = go.Figure()
     
     fig.add_trace(go.Bar(
         x=df[x_col],
         y=df[bar_col],
         name=bar_name,
-        hovertemplate=f"%{{x|%Y-%m}}<br>{bar_name}: %{{y:,.2f}}<extra></extra>",
+        hovertemplate=f"%{{x|%Y-%m}}<br>{bar_name}: %{{y:{bar_format}}}<extra></extra>",
+        marker_color=tokens["colorway"][0],
     ))
     
     fig.add_trace(go.Scatter(
@@ -366,21 +320,38 @@ def plot_dual_axis_line_bar(
         mode="lines+markers",
         name=line_name,
         yaxis="y2",
+        line=dict(color=tokens["colorway"][1], width=3),
+        marker=dict(color=tokens["colorway"][1], size=8),
     ))
     
     fig.update_layout(
+        yaxis=dict(
+            title=bar_name,
+            gridcolor=tokens["xaxis"]["gridcolor"],
+            linecolor=tokens["xaxis"]["linecolor"],
+            tickfont=tokens["xaxis"]["tickfont"],
+            titlefont=tokens["xaxis"]["titlefont"],
+        ),
         yaxis2=dict(
             title=line_name,
             overlaying="y",
             side="right",
             showgrid=False,
-        )
+            linecolor=tokens["xaxis"]["linecolor"],
+            tickfont=tokens["xaxis"]["tickfont"],
+            titlefont=tokens["xaxis"]["titlefont"],
+        ),
     )
     
-    fig.update_xaxes(title="Calendar month")
-    fig.update_yaxes(title=bar_name)
+    fig.update_xaxes(
+        title="Calendar month",
+        gridcolor=tokens["xaxis"]["gridcolor"],
+        linecolor=tokens["xaxis"]["linecolor"],
+        tickfont=tokens["xaxis"]["tickfont"],
+        titlefont=tokens["xaxis"]["titlefont"],
+    )
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -412,7 +383,10 @@ def plot_retention_matrix(
         color_continuous_scale=color_scale,
     )
     
-    return base_layout(fig, height=height, title=title)
+    # Format colorbar as percentage
+    fig.update_coloraxes(colorbar=dict(tickformat=".0%"))
+    
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 def plot_decay_curve(
@@ -424,6 +398,8 @@ def plot_decay_curve(
     height: int = 500,
 ) -> go.Figure:
     """Plot logo retention and NRR decay curves."""
+    tokens = get_plotly_theme()["layout"]
+    
     fig = go.Figure()
     
     if logo_col and logo_col in decay_df.columns:
@@ -432,6 +408,8 @@ def plot_decay_curve(
             y=decay_df[logo_col],
             mode="lines+markers",
             name="Logo retention",
+            line=dict(color=tokens["colorway"][0], width=3),
+            marker=dict(size=8),
         ))
     
     if nrr_col and nrr_col in decay_df.columns:
@@ -440,12 +418,14 @@ def plot_decay_curve(
             y=decay_df[nrr_col],
             mode="lines+markers",
             name="Net revenue retention",
+            line=dict(color=tokens["colorway"][1], width=3),
+            marker=dict(size=8),
         ))
     
     fig.update_yaxes(tickformat=".0%", title="Retention")
     fig.update_xaxes(title="Months since acquisition")
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -464,6 +444,8 @@ def plot_uncertainty_band(
     max_points: int = 1000,
 ) -> go.Figure:
     """Plot expected values with uncertainty ribbon."""
+    tokens = get_plotly_theme()["layout"]
+    
     # Sample if too many points
     if len(x_vals) > max_points:
         idx = np.linspace(0, len(x_vals) - 1, max_points, dtype=int)
@@ -479,6 +461,7 @@ def plot_uncertainty_band(
         y=expected,
         mode="lines",
         name="Expected value",
+        line=dict(color=tokens["colorway"][0], width=2),
     ))
     
     fig.add_trace(go.Scatter(
@@ -486,14 +469,16 @@ def plot_uncertainty_band(
         y=np.concatenate([upper, lower[::-1]]),
         fill="toself",
         line=dict(width=0),
-        name="Uncertainty range",
+        name="Uncertainty range (p10-p90)",
         opacity=0.25,
+        fillcolor=tokens["colorway"][0],
+        hoverinfo="skip",
     ))
     
     fig.update_xaxes(title=x_title)
     fig.update_yaxes(title=y_title)
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -523,9 +508,10 @@ def plot_pca_scatter(
         labels={pc1_col: "PC1", pc2_col: "PC2"},
         hover_data=[c for c in ["Customer ID", color_col, "segment_confidence"] 
                     if c and c in plot_df.columns],
+        color_discrete_sequence=SEGMENT_PALETTE,
     )
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -538,6 +524,8 @@ def plot_concentration_curve(
     height: int = 500,
 ) -> go.Figure:
     """Plot a concentration/Lorenz curve."""
+    tokens = get_plotly_theme()["layout"]
+    
     values = np.array(values)
     values = values[values > 0]
     values = np.sort(values)[::-1]
@@ -559,7 +547,7 @@ def plot_concentration_curve(
         x=ranks,
         y=cumshare,
         mode="lines",
-        line=dict(width=2),
+        line=dict(color=tokens["colorway"][0], width=2),
         name="Cumulative value share",
         hovertemplate=(
             "Customer percentile: %{x:.0%}<br>"
@@ -567,11 +555,11 @@ def plot_concentration_curve(
         ),
     ))
     
-    fig.add_hline(y=0.50, line_dash="dot", annotation_text="50% of value")
+    fig.add_hline(y=0.50, line_dash="dot", line_color="rgba(100,100,100,0.5)", annotation_text="50% of value")
     fig.update_xaxes(tickformat=".0%", title="Customer percentile")
     fig.update_yaxes(tickformat=".0%", title="Cumulative share")
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -586,9 +574,12 @@ def plot_action_allocation(
     height: int = 470,
 ) -> go.Figure:
     """Plot action allocation horizontal bar chart."""
-    from .app_components import ACTION_COLORS
-    
     action_counts = action_counts.sort_values(count_col, ascending=True)
+    
+    # Build color map
+    color_map = {}
+    for action in action_counts[action_col].unique():
+        color_map[action] = get_action_color(str(action))
     
     fig = px.bar(
         action_counts,
@@ -597,10 +588,10 @@ def plot_action_allocation(
         orientation="h",
         labels={count_col: "Customers", action_col: "Action"},
         color=action_col,
-        color_discrete_map=ACTION_COLORS,
+        color_discrete_map=color_map,
     )
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -617,6 +608,8 @@ def plot_clv_by_segment(
     height: int = 470,
 ) -> go.Figure:
     """Plot CLV by segment as horizontal bar chart."""
+    tokens = get_plotly_theme()["layout"]
+    
     fig = px.bar(
         segment_profile,
         x=clv_col,
@@ -624,8 +617,13 @@ def plot_clv_by_segment(
         orientation="h",
         labels={clv_col: "Total CLV", segment_col: "Segment"},
         hover_data=[count_col, median_col],
+        color=segment_col,
+        color_discrete_sequence=SEGMENT_PALETTE,
     )
-    return base_layout(fig, height=height, title=title)
+    
+    fig.update_xaxes(tickformat="£,.0f")
+    
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -644,7 +642,9 @@ def plot_decision_scatter(
     y_format: Optional[str] = None,
 ) -> go.Figure:
     """Create decision engine scatter plot with action coloring."""
-    from .app_components import ACTION_COLORS
+    color_map = {}
+    for action in df[color_col].unique():
+        color_map[action] = get_action_color(str(action))
     
     fig = px.scatter(
         df,
@@ -655,7 +655,7 @@ def plot_decision_scatter(
         size_max=18,
         opacity=0.45,
         labels={x_col: x_col, y_col: y_col, color_col: "Action"},
-        color_discrete_map=ACTION_COLORS,
+        color_discrete_map=color_map,
     )
     
     if x_log:
@@ -666,7 +666,7 @@ def plot_decision_scatter(
     if y_format:
         fig.update_yaxes(tickformat=y_format)
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -681,7 +681,7 @@ def plot_priority_distribution(
     height: int = 470,
 ) -> go.Figure:
     """Plot priority score distribution by action."""
-    from .app_components import ACTION_COLORS
+    tokens = get_plotly_theme()["layout"]
     
     fig = go.Figure()
     
@@ -689,17 +689,17 @@ def plot_priority_distribution(
         subset = df[df[action_col] == action]
         fig.add_trace(go.Histogram(
             x=subset[priority_col],
-            name=action,
+            name=str(action),
             opacity=0.5,
             nbinsx=20,
-            marker_color=ACTION_COLORS.get(action, "#697386"),
+            marker_color=get_action_color(str(action)),
         ))
     
     fig.update_layout(barmode="overlay")
     fig.update_xaxes(title="Priority Score")
     fig.update_yaxes(title="Density")
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -716,17 +716,19 @@ def plot_expected_value_by_action(
     """Plot expected value by action."""
     ev_by_action = df.groupby(action_col)[value_col].mean().sort_values()
     
+    colors = [get_action_color(a) for a in ev_by_action.index]
+    
     fig = go.Figure()
     fig.add_trace(go.Bar(
         y=ev_by_action.index,
         x=ev_by_action.values,
         orientation="h",
-        marker_color=[ACTION_COLORS.get(a, "#697386") for a in ev_by_action.index],
+        marker_color=colors,
     ))
     
-    fig.update_xaxes(title="Expected Value Proxy")
+    fig.update_xaxes(title="Expected Value Proxy", tickformat="£,.0f")
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
 
 
 # =============================================================================
@@ -742,7 +744,7 @@ def plot_clv_vs_churn_by_action(
     height: int = 470,
 ) -> go.Figure:
     """Plot CLV vs Churn colored by action."""
-    from .app_components import ACTION_COLORS
+    tokens = get_plotly_theme()["layout"]
     
     fig = go.Figure()
     
@@ -754,13 +756,113 @@ def plot_clv_vs_churn_by_action(
             mode="markers",
             marker=dict(
                 size=20,
-                color=ACTION_COLORS.get(action, "#697386"),
+                color=get_action_color(str(action)),
                 opacity=0.5,
+                line=dict(width=1, color="rgba(255,255,255,0.5)"),
             ),
-            name=action,
+            name=str(action),
         ))
     
-    fig.update_xaxes(type="log", title="CLV (log scale)")
+    fig.update_xaxes(type="log", title="CLV (log scale)", tickformat="£,.0f")
     fig.update_yaxes(tickformat=".0%", title="Churn Probability")
     
-    return base_layout(fig, height=height, title=title)
+    return apply_plotly_theme(fig, height=height, title=title)
+
+
+# =============================================================================
+# BASE LAYOUT
+# =============================================================================
+
+def base_layout(
+    fig: go.Figure,
+    height: int = 420,
+    title: Optional[str] = None,
+) -> go.Figure:
+    """Apply consistent base layout to a Plotly figure."""
+    tokens = get_color_tokens()
+    
+    fig.update_layout(
+        height=height,
+        margin=dict(l=10, r=10, t=50 if title else 20, b=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(
+            family=TYPOGRAPHY.font_sans,
+            color=tokens.chart_text,
+        ),
+        title=(
+            dict(
+                text=title,
+                x=0,
+                xanchor="left",
+                font=dict(size=17, color=tokens.text_primary),
+            )
+            if title
+            else None
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+            font=dict(size=12, color=tokens.text_secondary),
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        xaxis=dict(
+            gridcolor=tokens.chart_grid,
+            linecolor=tokens.chart_axis,
+            tickcolor=tokens.chart_axis,
+            tickfont=dict(color=tokens.text_secondary, size=11),
+            titlefont=dict(color=tokens.text_secondary, size=12),
+            zerolinecolor=tokens.border_subtle,
+        ),
+        yaxis=dict(
+            gridcolor=tokens.chart_grid,
+            linecolor=tokens.chart_axis,
+            tickcolor=tokens.chart_axis,
+            tickfont=dict(color=tokens.text_secondary, size=11),
+            titlefont=dict(color=tokens.text_secondary, size=12),
+            zerolinecolor=tokens.border_subtle,
+        ),
+        colorway=SEGMENT_PALETTE,
+        hoverlabel=dict(
+            bgcolor=tokens.surface,
+            bordercolor=tokens.border,
+            font=dict(color=tokens.text_primary, size=12, family=TYPOGRAPHY.font_sans),
+        ),
+    )
+    return fig
+
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+__all__ = [
+    "base_layout",
+    "plot_missing",
+    "plot_histogram",
+    "plot_histogram_with_marginal",
+    "plot_horizontal_bar",
+    "plot_stacked_bar",
+    "plot_scatter",
+    "plot_scatter_with_quadrants",
+    "plot_heatmap",
+    "plot_segment_heatmap",
+    "plot_line",
+    "plot_dual_axis_line_bar",
+    "plot_retention_matrix",
+    "plot_decay_curve",
+    "plot_uncertainty_band",
+    "plot_pca_scatter",
+    "plot_concentration_curve",
+    "plot_action_allocation",
+    "plot_clv_by_segment",
+    "plot_decision_scatter",
+    "plot_priority_distribution",
+    "plot_expected_value_by_action",
+    "plot_clv_vs_churn_by_action",
+    "PLOTLY_CONFIG",
+    "apply_plotly_theme",
+]
