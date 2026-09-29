@@ -266,32 +266,20 @@ def compute_decision_policy(df: pd.DataFrame, confidence_threshold: float = 0.5)
     df["recommended_action"] = df.apply(select_action, axis=1, threshold=confidence_threshold)
     
     # Priority score = score of SELECTED action only (not max of all)
-    action_score_map = {
-        "protect_value": df["protect_value_score"],
-        "accelerate_purchase": df["accelerate_purchase_score"],
-        "reactivate": df["reactivate_score"],
-        "cross_sell": df["cross_sell_score"],
-        "nurture": df["nurture_score"],
-        "monitor": 0.0,
+    action_score_cols = {
+        "protect_value": "protect_value_score",
+        "accelerate_purchase": "accelerate_purchase_score",
+        "reactivate": "reactivate_score",
+        "cross_sell": "cross_sell_score",
+        "nurture": "nurture_score",
     }
-    df["priority_score"] = df.apply(
-        lambda row: action_score_map[row["recommended_action"]].iloc[row.name] if row["recommended_action"] != "monitor" else 0.0,
-        axis=1
-    )
     
-    # Decision confidence = action score / max possible
-    action_score_map = {
-        "protect_value": df["protect_value_score"],
-        "accelerate_purchase": df["accelerate_purchase_score"],
-        "reactivate": df["reactivate_score"],
-        "cross_sell": df["cross_sell_score"],
-        "nurture": df["nurture_score"],
-        "monitor": 0.0,
-    }
-    df["decision_confidence"] = df.apply(
-        lambda row: action_score_map[row["recommended_action"]].iloc[row.name] if row["recommended_action"] != "monitor" else 0.0,
-        axis=1
-    )
+    conditions = [df["recommended_action"] == action for action in action_score_cols]
+    choices = [df[col] for col in action_score_cols.values()]
+    df["priority_score"] = np.select(conditions, choices, default=0.0)
+    
+    # Decision confidence = selected action score (not a probability, but a heuristic score)
+    df["decision_confidence"] = df["priority_score"]
     
     # Expected value proxy
     def compute_expected_value(row):
@@ -339,9 +327,8 @@ def apply_capacity_constraints(
     capacity_cross_sell: int,
     capacity_nurture: int,
 ) -> pd.DataFrame:
-    """Apply capacity constraints to action allocation, considering next-best eligible actions."""
-    
-    # Action-specific caps
+    """Apply capacity constraints with next-best-action fallback."""
+
     action_caps = {
         "reactivate": capacity_reactivate,
         "accelerate_purchase": capacity_accelerate,
@@ -350,44 +337,60 @@ def apply_capacity_constraints(
         "protect_value": capacity_total,
         "monitor": capacity_total,
     }
-    
-    # Action order for fallback (from highest to lowest priority)
+
     action_order = ["protect_value", "accelerate_purchase", "reactivate", "cross_sell", "nurture", "monitor"]
-    
-    # Rank by priority_score within each action
-    df["action_rank"] = df.groupby("recommended_action")["priority_score"].rank(ascending=False, method="first")
-    
-    # Apply caps with fallback to next best action
-    def apply_cap_with_fallback(row):
-        action = row["recommended_action"]
-        cap = action_caps.get(action, capacity_total)
-        
-        if row["action_rank"] <= cap:
-            return action
-        
-        # Find next best eligible action
-        for next_action in action_order:
-            if next_action == action:
-                continue
-            next_cap = action_caps.get(next_action, capacity_total)
-            # Check if there's capacity in next action by seeing how many already assigned
-            # For simplicity, we just demote to monitor if original action is full
-            # A full implementation would track current allocations per action
-            if next_action == "monitor":
-                return "monitor"
-        
-        return "monitor"
-    
-    df["recommended_action_capped"] = df.apply(apply_cap_with_fallback, axis=1)
-    
-    # Recompute priority for final allocation
-    final_candidates = df[df["recommended_action_capped"] != "monitor"].copy()
-    final_candidates = final_candidates.sort_values("priority_score", ascending=False)
-    
-    if len(final_candidates) > capacity_total:
-        final_candidates = final_candidates.head(capacity_total)
-        df.loc[~df.index.isin(final_candidates.index), "recommended_action_capped"] = "monitor"
-    
+
+    score_cols = {
+        "protect_value": "protect_value_score",
+        "accelerate_purchase": "accelerate_purchase_score",
+        "reactivate": "reactivate_score",
+        "cross_sell": "cross_sell_score",
+        "nurture": "nurture_score",
+    }
+
+    allocated = {action: 0 for action in action_caps}
+    final_actions = []
+
+    for idx, row in df.sort_values("priority_score", ascending=False).iterrows():
+        original_action = row["recommended_action"]
+
+        assigned = False
+        for candidate_action in action_order:
+            if candidate_action == original_action:
+                if allocated[candidate_action] < action_caps[candidate_action]:
+                    final_actions.append(candidate_action)
+                    allocated[candidate_action] += 1
+                    assigned = True
+                    break
+            else:
+                if candidate_action in score_cols:
+                    score_col = score_cols[candidate_action]
+                    if row[score_col] >= df[score_col].median() and allocated[candidate_action] < action_caps[candidate_action]:
+                        final_actions.append(candidate_action)
+                        allocated[candidate_action] += 1
+                        assigned = True
+                        break
+                elif candidate_action == "monitor":
+                    final_actions.append("monitor")
+                    allocated["monitor"] += 1
+                    assigned = True
+                    break
+
+        if not assigned:
+            final_actions.append("monitor")
+            allocated["monitor"] += 1
+
+    df = df.copy()
+    df["recommended_action_capped"] = final_actions
+
+    if allocated["monitor"] > capacity_total:
+        monitor_mask = df["recommended_action_capped"] == "monitor"
+        monitor_df = df[monitor_mask].sort_values("priority_score", ascending=False)
+        df.loc[monitor_mask, "recommended_action_capped"] = "monitor"
+        if len(monitor_df) > capacity_total:
+            keep_idx = monitor_df.head(capacity_total).index
+            df.loc[~df.index.isin(keep_idx), "recommended_action_capped"] = "monitor"
+
     return df
 
 

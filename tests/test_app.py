@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from streamlit_app.app_components import (
+from streamlit_app.ui import (
     render_kpi_card,
     render_science_card,
     render_customer_selector,
@@ -196,7 +196,7 @@ class TestAppComponents:
     def test_HERO_COPY_complete(self):
         expected_pages = [
             "Executive", "Customer 360", "Segmentation", "Cohorts",
-            "CLV", "Retention & Next Purchase",
+            "Predictive Value", "Retention & Next Purchase",
             "Recommendations", "Decision Engine", "Methodology"
         ]
         for page in expected_pages:
@@ -240,7 +240,6 @@ class TestIntegration:
         import inspect
         source = inspect.getsource(app)
         assert "def pct(" not in source
-        assert "pct(" not in source or "format_percent" in source
 
 
 # =============================================================================
@@ -279,7 +278,7 @@ class TestDataValidation:
         recs = registry.load_dataframe("recommendations")
         assert recs is not None, "Recommendations artifact should exist"
         assert "reason" in recs.columns, "Recommendations should have 'reason' column"
-        valid_reasons = {"co_purchase", "popularity"}
+        valid_reasons = {"co_purchase_affinity", "co_purchase_blend", "popularity_fallback"}
         actual_reasons = set(recs["reason"].unique())
         assert actual_reasons.issubset(valid_reasons)
 

@@ -269,37 +269,28 @@ def classify_product_roles(product_metrics: pl.DataFrame) -> pl.DataFrame:
     return out
 
 
-def build_co_purchase_matrix(tx: pl.DataFrame, min_cooccurrence: int = 5, max_pairs_per_invoice: int = 50) -> pl.DataFrame:
-    """Build product co-purchase matrix for basket analysis (optimized)."""
-    LOGGER.info("Building co-purchase matrix...")
+def build_co_purchase_matrix(tx: pl.DataFrame, min_cooccurrence: int = 5) -> pl.DataFrame:
+    """Build product co-purchase matrix at CUSTOMER level for consistent lift calculation.
+
+    Co-occurrence = number of CUSTOMERS who bought both products (not invoices).
+    This ensures consistent observation unit with customer-level product supports.
+    """
+    LOGGER.info("Building co-purchase matrix (customer-level)...")
 
     sales = tx.filter(pl.col("is_clean_sale"))
 
-    # Get invoices with multiple products
-    invoice_products = (
-        sales.group_by("Invoice")
-        .agg(pl.col("StockCode").unique().alias("products"))
-        .filter(pl.col("products").list.len() > 1)
-        .filter(pl.col("products").list.len() <= max_pairs_per_invoice)  # Limit to avoid explosion
-    )
+    customer_products = sales.select(["Customer ID", "StockCode"]).unique()
 
-    if invoice_products.height == 0:
-        return pl.DataFrame(schema={"product_a": pl.Utf8, "product_b": pl.Utf8, "cooccurrence": pl.Int64})
-
-    # Use Polars explode and self-join for co-occurrence
-    exploded = invoice_products.explode("products").rename({"products": "product_a"})
-    
-    # Self-join on Invoice to get all pairs
-    co_purchase = exploded.join(
-        exploded.select(["Invoice", "product_a"]).rename({"product_a": "product_b"}),
-        on="Invoice",
+    co_purchase = customer_products.join(
+        customer_products.rename({"StockCode": "product_b"}),
+        on="Customer ID",
         how="inner"
-    ).filter(pl.col("product_a") < pl.col("product_b"))  # Avoid duplicates and self-pairs
-    
+    ).filter(pl.col("StockCode") < pl.col("product_b"))
+
     co_purchase = (
-        co_purchase.group_by(["product_a", "product_b"])
+        co_purchase.group_by(["StockCode", "product_b"])
         .len()
-        .rename({"len": "cooccurrence"})
+        .rename({"len": "cooccurrence", "StockCode": "product_a"})
         .filter(pl.col("cooccurrence") >= min_cooccurrence)
         .sort("cooccurrence", descending=True)
     )

@@ -182,7 +182,6 @@ def classify_transactions(df: pl.DataFrame) -> pl.DataFrame:
     # Keep: is_positive_price, is_negative_quantity (renamed), return_units, etc. as they're used downstream
     redundant_cols = [
         "is_cancellation_invoice",
-        "is_clean_sale",
         "is_return_or_cancellation",
         "line_value",
         "gross_sale_value",
