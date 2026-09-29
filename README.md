@@ -1,5 +1,8 @@
 # Retail Customer Intelligence Pipeline
 
+
+Live app: https://customer360analytics.streamlit.app/
+
 End-to-end retail customer intelligence pipeline for the **Online Retail II** dataset (UCI). Modular, config-driven, and scientifically rigorous — designed as a portfolio-ready data science artifact.
 
 ## Architecture Overview
