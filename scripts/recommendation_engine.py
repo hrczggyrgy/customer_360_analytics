@@ -265,10 +265,14 @@ def generate_recommendations_vectorized(
         (0.7 * pl.col("co_purchase_score_norm") + 0.3 * pl.col("popularity_score")).alias("final_score"),
     ])
 
-    # Rank per customer
+    # Rank per customer with deterministic tie-breaking
+    # Sort by final_score descending, then by candidate_product for deterministic tie-breaking
+    scored = scored.sort(["Customer ID", "final_score", "candidate_product"], descending=[False, True, False])
     scored = scored.with_columns([
         pl.col("final_score").rank(descending=True).over("Customer ID").alias("rank"),
     ])
+    # Filter to top_k
+    scored = scored.filter(pl.col("rank") <= top_k).sort(["Customer ID", "rank"])
 
     # Take top-K
     top_k_recs = scored.filter(pl.col("rank") <= top_k).sort(["Customer ID", "rank"])
@@ -567,8 +571,8 @@ def evaluate_recommendations(
     else:
         metrics["catalog_coverage"] = float(n_recommended_products)
 
-    metrics["n_customers_evaluated"] = int(n_customers_eval)
-    metrics["n_customers_with_recommendations"] = int(n_customers_with_recs)
+    metrics["n_customers_evaluated"] = int(n_eligible)
+    metrics["n_customers_with_recommendations"] = int(n_with_recs)
     metrics["n_recommendations"] = int(recs.height)
 
     return metrics

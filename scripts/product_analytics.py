@@ -271,7 +271,7 @@ def classify_product_roles(product_metrics: pl.DataFrame) -> pl.DataFrame:
     return out
 
 
-def build_co_purchase_matrix(tx: pl.DataFrame, min_cooccurrence: int = 5) -> pl.DataFrame:
+def build_co_purchase_matrix(tx: pl.DataFrame, min_cooccurrence: int = 5, max_pairs_per_invoice: int = 50) -> pl.DataFrame:
     """Build product co-purchase matrix at CUSTOMER level for consistent lift calculation.
 
     Co-occurrence = number of CUSTOMERS who bought both products (not invoices).

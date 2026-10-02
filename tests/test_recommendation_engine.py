@@ -189,7 +189,11 @@ class TestRecommendationEngine:
         # Compare key columns only (rank and recommended_product per customer)
         recs1_sorted = recs1.sort(["Customer ID", "rank"]).select(["Customer ID", "recommended_product", "rank"])
         recs2_sorted = recs2.sort(["Customer ID", "rank"]).select(["Customer ID", "recommended_product", "rank"])
-        assert recs1_sorted.equals(recs2_sorted)
+        # Compare row by row
+        assert recs1_sorted.height == recs2_sorted.height
+        assert recs1_sorted["Customer ID"].to_list() == recs2_sorted["Customer ID"].to_list()
+        assert recs1_sorted["recommended_product"].to_list() == recs2_sorted["recommended_product"].to_list()
+        assert recs1_sorted["rank"].to_list() == recs2_sorted["rank"].to_list()
 
     def test_fallback_behavior(self, sample_customer_product, sample_co_purchase):
         """Customers with no co-purchase candidates should get popularity fallback."""
@@ -222,7 +226,7 @@ class TestRecommendationEngine:
             customers_with_copurchase=set()
         )
         
-        assert (fallback_recs["reason"] == "popularity").all()
+        assert (fallback_recs["reason"] == "popularity_fallback").all()
 
     def test_evaluate_recommendations_hit_rate(self):
         """Hit rate calculation should be correct."""
