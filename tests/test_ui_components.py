@@ -223,9 +223,8 @@ class TestHeroCopy:
 
     def test_all_pages_defined(self):
         expected = [
-            "Executive", "Customer 360", "Segmentation", "Cohorts",
-            "Predictive Value", "Retention & Next Purchase",
-            "Recommendations", "Decision Engine", "Methodology"
+            "Strategy", "Customers", "Value & Retention", "Segments",
+            "Products & Baskets", "Personalisation", "Activation", "Science & Governance"
         ]
         for page in expected:
             assert page in HERO_COPY
