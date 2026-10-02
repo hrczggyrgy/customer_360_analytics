@@ -38,6 +38,11 @@ from .theme import (
     apply_plotly_theme,
 )
 
+from .scope import (
+    init_global_scope,
+    apply_global_scope,
+)
+
 from .components import (
     render_kpi_card,
     render_kpi_row,
@@ -60,6 +65,14 @@ from .components import (
     responsive_columns,
     HERO_COPY,
     render_sidebar,
+    render_insight,
+    render_insight_row,
+    render_kpi_strip,
+    render_metric_context,
+    render_peer_benchmark,
+    render_audience_table,
+    render_distribution_summary,
+    render_scientific_note,
 )
 
 from .charts import (
@@ -85,6 +98,10 @@ from .charts import (
     plot_priority_distribution,
     plot_expected_value_by_action,
     plot_clv_vs_churn_by_action,
+    plot_opportunity_matrix,
+    plot_transition_matrix,
+    plot_value_concentration_curve,
+    plot_peer_benchmark,
 )
 
 __all__ = [
@@ -118,6 +135,9 @@ __all__ = [
     "get_segment_color",
     "get_plotly_theme",
     "apply_plotly_theme",
+    # Scope
+    "init_global_scope",
+    "apply_global_scope",
     # Components
     "render_kpi_card",
     "render_kpi_row",
@@ -139,6 +159,14 @@ __all__ = [
     "render_segment_badge",
     "responsive_columns",
     "HERO_COPY",
+    "render_insight",
+    "render_insight_row",
+    "render_kpi_strip",
+    "render_metric_context",
+    "render_peer_benchmark",
+    "render_audience_table",
+    "render_distribution_summary",
+    "render_scientific_note",
     # Charts
     "plot_missing",
     "plot_histogram",
@@ -162,4 +190,8 @@ __all__ = [
     "plot_priority_distribution",
     "plot_expected_value_by_action",
     "plot_clv_vs_churn_by_action",
+    "plot_opportunity_matrix",
+    "plot_transition_matrix",
+    "plot_value_concentration_curve",
+    "plot_peer_benchmark",
 ]

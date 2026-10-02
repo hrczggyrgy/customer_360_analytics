@@ -437,41 +437,37 @@ def render_action_summary_table(action_summary: pd.DataFrame) -> None:
 # =============================================================================
 
 HERO_COPY = {
-    "Executive": (
-        "Executive view",
-        "A decision-oriented summary of customer economics, retention, risk, and opportunity.",
+    "Strategy": (
+        "Customer Strategy",
+        "Understand portfolio health, value concentration, customer movement, and commercial opportunity.",
     ),
-    "Customer 360": (
+    "Customers": (
         "Customer 360",
         "Move from portfolio-level metrics to an individual customer and inspect the evidence behind the models.",
     ),
-    "Segmentation": (
-        "Behavioral segmentation",
-        "A multi-dimensional view of customer behavior beyond conventional RFM.",
+    "Value & Retention": (
+        "Value & Retention",
+        "Where is future value concentrated, and where is economically meaningful risk concentrated?",
     ),
-    "Cohorts": (
-        "Cohort intelligence",
-        "Read acquisition quality through retention, revenue persistence, and reactivation over customer age.",
+    "Segments": (
+        "Customer Segments",
+        "A commercial segmentation workspace: portfolio map, scorecard, composition, movement, and RFM benchmark.",
     ),
-    "Predictive Value": (
-        "Predicted Future Net Revenue (CLV Proxy)",
-        "Inspect value distributions, uncertainty, and the economic concentration of the customer base.",
+    "Products & Baskets": (
+        "Products & Baskets",
+        "What products, combinations, and customer affinities represent commercial opportunity?",
     ),
-    "Retention & Next Purchase": (
-        "Retention and next purchase",
-        "Translate customer behavior into forward-looking probability signals with clear model diagnostics.",
+    "Personalisation": (
+        "Personalisation",
+        "Which recommendations are most relevant, and how well do the methods perform out of sample?",
     ),
-    "Recommendations": (
-        "Product recommendations",
-        "Co-purchase based product recommendations with transparent scoring and fallback logic.",
+    "Activation": (
+        "Activation",
+        "Given limited capacity, where is analytical attention allocated?",
     ),
-    "Decision Engine": (
-        "Commercial decision engine",
-        "Combine value, risk, propensity, and behavioral context into a transparent next-best-action policy.",
-    ),
-    "Methodology": (
-        "The science",
-        "Understand how the analytical layers connect, what each model is answering, and where causal claims stop.",
+    "Science & Governance": (
+        "Science & Governance",
+        "Data quality, feature governance, model performance, calibration, lineage, and methodology.",
     ),
 }
 
@@ -806,6 +802,410 @@ def responsive_columns(n: int, max_cols: int = 4, min_width: int = 280) -> List:
 
 
 # =============================================================================
+# INSIGHT PANEL
+# =============================================================================
+
+def render_insight(
+    label: str,
+    headline: str,
+    detail: str,
+    evidence: Optional[str] = None,
+    severity: Optional[str] = None,
+) -> None:
+    """
+    Render a strategic insight card.
+    
+    Args:
+        label: Insight category label (e.g., "KEY INSIGHT", "OPPORTUNITY", "RISK")
+        headline: One-sentence summary
+        detail: Supporting detail with computed values
+        evidence: Optional metric basis explanation
+        severity: Optional severity indicator ("high", "medium", "low", "info")
+    """
+    severity_colors = {
+        "high": "var(--danger)",
+        "medium": "var(--warning)",
+        "low": "var(--info)",
+        "info": "var(--primary)",
+    }
+    severity_bg = {
+        "high": "var(--danger-soft)",
+        "medium": "var(--warning-soft)",
+        "low": "var(--info-soft)",
+        "info": "var(--primary-soft)",
+    }
+    
+    color = severity_colors.get(severity, "var(--primary)")
+    bg = severity_bg.get(severity, "var(--primary-soft)")
+    
+    label_html = f"<div style='color:{color};font-weight:700;font-size:var(--text-xs);letter-spacing:0.04em;text-transform:uppercase;margin-bottom:4px;'>{label}</div>"
+    headline_html = f"<div style='color:var(--text-primary);font-size:var(--text-base);font-weight:600;line-height:1.4;margin-bottom:6px;'>{headline}</div>"
+    detail_html = f"<div style='color:var(--text-secondary);font-size:var(--text-sm);line-height:1.5;margin-bottom:8px;'>{detail}</div>"
+    
+    evidence_html = ""
+    if evidence:
+        evidence_html = f"<div style='color:var(--text-muted);font-size:var(--text-xs);font-style:italic;border-top:1px solid var(--border);padding-top:8px;'>Evidence: {evidence}</div>"
+    
+    st.markdown(
+        f"""
+        <div style='
+            background: {bg};
+            border-left: 4px solid {color};
+            border-radius: var(--radius-lg);
+            padding: 16px 20px;
+            margin: 8px 0;
+        '>
+            {label_html}
+            {headline_html}
+            {detail_html}
+            {evidence_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_insight_row(insights: List[Dict[str, Any]], max_cols: int = 2) -> None:
+    """Render multiple insights in a responsive grid."""
+    n = len(insights)
+    if n == 0:
+        return
+    
+    for start in range(0, n, max_cols):
+        row_insights = insights[start:start + max_cols]
+        cols = st.columns(len(row_insights))
+        
+        for col, insight in zip(cols, row_insights):
+            with col:
+                render_insight(
+                    label=insight.get("label", "INSIGHT"),
+                    headline=insight.get("headline", ""),
+                    detail=insight.get("detail", ""),
+                    evidence=insight.get("evidence"),
+                    severity=insight.get("severity"),
+                )
+
+
+# =============================================================================
+# KPI STRIP
+# =============================================================================
+
+def render_kpi_strip(metrics: List[Dict[str, Any]]) -> None:
+    """Render a compact horizontal strip of KPIs."""
+    if not metrics:
+        return
+    
+    cols = st.columns(len(metrics))
+    for col, metric in zip(cols, metrics):
+        with col:
+            render_kpi_card(
+                label=metric.get("label", ""),
+                value=metric.get("value"),
+                help_text=metric.get("help"),
+                formatter=metric.get("formatter", "auto"),
+                column_name=metric.get("column_name", ""),
+                delta=metric.get("delta"),
+                delta_color=metric.get("delta_color", "normal"),
+            )
+
+
+# =============================================================================
+# METRIC CONTEXT
+# =============================================================================
+
+def render_metric_context(
+    label: str,
+    value: Any,
+    benchmark: Any,
+    formatter: str = "auto",
+    column_name: str = "",
+    higher_is_better: bool = True,
+) -> None:
+    """Render a metric with peer/benchmark context."""
+    formatted_value = auto_format(value, column_name) if formatter == "auto" else (
+        format_currency(value) if formatter == "currency" else
+        format_probability(value) if formatter == "probability" else
+        format_percent(value) if formatter == "percent" else
+        format_ratio(value) if formatter == "ratio" else
+        format_count(value) if formatter == "count" else
+        format_score(value) if formatter == "score" else
+        format_days(value) if formatter == "days" else
+        str(value) if value is not None else "—"
+    )
+    
+    formatted_benchmark = auto_format(benchmark, column_name) if formatter == "auto" else (
+        format_currency(benchmark) if formatter == "currency" else
+        format_probability(benchmark) if formatter == "probability" else
+        format_percent(benchmark) if formatter == "percent" else
+        format_ratio(benchmark) if formatter == "ratio" else
+        format_count(benchmark) if formatter == "count" else
+        format_score(benchmark) if formatter == "score" else
+        format_days(benchmark) if formatter == "days" else
+        str(benchmark) if benchmark is not None else "—"
+    )
+    
+    try:
+        v = float(value) if value is not None else 0
+        b = float(benchmark) if benchmark is not None else 0
+        favorable = (v >= b) if higher_is_better else (v <= b)
+        color = "var(--success)" if favorable else "var(--danger)"
+        icon = "▲" if favorable else "▼"
+    except (TypeError, ValueError):
+        color = "var(--text-muted)"
+        icon = "•"
+    
+    st.markdown(
+        f"""
+        <div style='
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 14px 18px;
+        '>
+            <div style='color:var(--text-secondary);font-size:var(--text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;'>{label}</div>
+            <div style='
+                display:flex;
+                align-items:baseline;
+                gap:8px;
+                color:var(--text-primary);
+                font-size:var(--text-xl);
+                font-weight:700;
+            '>
+                {formatted_value}
+                <span style='
+                    color:{color};
+                    font-size:var(--text-sm);
+                    font-weight:600;
+                '>{icon} vs {formatted_benchmark}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# =============================================================================
+# PEER BENCHMARK
+# =============================================================================
+
+def render_peer_benchmark(
+    metrics: List[Dict[str, Any]],
+    title: str = "Customer vs Segment Peers",
+) -> None:
+    """
+    Render a peer benchmark comparison.
+    
+    Args:
+        metrics: List of dicts with keys: label, value, peer_median, higher_is_better, formatter, column_name
+        title: Section title
+    """
+    st.markdown(f"<div class='section-label'>{title}</div>", unsafe_allow_html=True)
+    
+    for metric in metrics:
+        render_metric_context(
+            label=metric.get("label", ""),
+            value=metric.get("value"),
+            benchmark=metric.get("peer_median"),
+            formatter=metric.get("formatter", "auto"),
+            column_name=metric.get("column_name", ""),
+            higher_is_better=metric.get("higher_is_better", True),
+        )
+
+
+# =============================================================================
+# AUDIENCE TABLE
+# =============================================================================
+
+def render_audience_table(
+    df: pd.DataFrame,
+    columns: Optional[List[str]] = None,
+    column_config: Optional[Dict] = None,
+    download_filename: Optional[str] = None,
+    download_label: str = "Export audience",
+    max_rows: int = 500,
+    **kwargs,
+) -> None:
+    """
+    Render an actionable audience table with export capability.
+    
+    Args:
+        df: DataFrame with audience data
+        columns: Columns to display
+        column_config: Streamlit column config
+        download_filename: Filename for CSV export
+        download_label: Label for download button
+        max_rows: Maximum rows to display (for performance)
+        **kwargs: Additional st.dataframe arguments
+    """
+    if df is None or df.empty:
+        render_missing("No audience data to display.")
+        return
+    
+    display_df = df[columns] if columns else df.copy()
+    
+    if len(display_df) > max_rows:
+        st.caption(f"Showing {max_rows:,} of {len(display_df):,} rows. Use export for full data.")
+        display_df = display_df.head(max_rows)
+    
+    config = {}
+    for col in display_df.columns:
+        sem_type = infer_semantic_type(col)
+        
+        if sem_type == SemanticType.CURRENCY:
+            config[col] = st.column_config.NumberColumn(
+                col.replace("_", " ").title(),
+                format="£%.0f",
+            )
+        elif sem_type == SemanticType.PROBABILITY:
+            display_df[col] = display_df[col] * 100
+            config[col] = st.column_config.NumberColumn(
+                col.replace("_", " ").title(),
+                format="%.1f%%",
+            )
+        elif sem_type == SemanticType.PERCENTAGE:
+            config[col] = st.column_config.NumberColumn(
+                col.replace("_", " ").title(),
+                format="%.1f%%",
+            )
+        elif sem_type == SemanticType.RATIO:
+            config[col] = st.column_config.NumberColumn(
+                col.replace("_", " ").title(),
+                format="%.2fx",
+            )
+        elif sem_type == SemanticType.COUNT:
+            config[col] = st.column_config.NumberColumn(
+                col.replace("_", " ").title(),
+                format="%,d",
+            )
+        elif sem_type == SemanticType.SCORE:
+            config[col] = st.column_config.NumberColumn(
+                col.replace("_", " ").title(),
+                format="%.2f",
+            )
+        elif sem_type == SemanticType.DURATION_DAYS:
+            config[col] = st.column_config.TextColumn(
+                col.replace("_", " ").title(),
+            )
+        elif sem_type == SemanticType.DURATION_MONTHS:
+            config[col] = st.column_config.TextColumn(
+                col.replace("_", " ").title(),
+            )
+        elif sem_type == SemanticType.DATE:
+            config[col] = st.column_config.DateColumn(
+                col.replace("_", " ").title(),
+                format="YYYY-MM-DD",
+            )
+        elif sem_type == SemanticType.MONTH:
+            config[col] = st.column_config.TextColumn(
+                col.replace("_", " ").title(),
+            )
+        else:
+            config[col] = st.column_config.TextColumn(
+                col.replace("_", " ").title(),
+            )
+    
+    if column_config:
+        config.update(column_config)
+    
+    action_cols = [c for c in display_df.columns if any(kw in c.lower() for kw in ["action", "reason", "priority", "tier"])]
+    for col in action_cols:
+        if col in config:
+            pass
+    
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config=config,
+        **kwargs,
+    )
+    
+    if download_filename:
+        csv = df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label=download_label,
+            data=csv,
+            file_name=download_filename,
+            mime="text/csv",
+            help=f"Download full audience ({len(df):,} rows) as CSV",
+        )
+
+
+# =============================================================================
+# DISTRIBUTION SUMMARY
+# =============================================================================
+
+def render_distribution_summary(
+    values: np.ndarray,
+    label: str,
+    formatter: str = "auto",
+    column_name: str = "",
+) -> None:
+    """Render a compact distribution summary (min, p25, median, p75, max, mean)."""
+    clean = values[~np.isnan(values)] if isinstance(values, np.ndarray) else np.array([v for v in values if v is not None and not (isinstance(v, float) and np.isnan(v))])
+    
+    if len(clean) == 0:
+        render_missing(f"No {label} data available.")
+        return
+    
+    stats = {
+        "Min": np.min(clean),
+        "P25": np.percentile(clean, 25),
+        "Median": np.median(clean),
+        "P75": np.percentile(clean, 75),
+        "Max": np.max(clean),
+        "Mean": np.mean(clean),
+    }
+    
+    cols = st.columns(len(stats))
+    for col, (stat_label, stat_value) in zip(cols, stats.items()):
+        with col:
+            if formatter == "auto":
+                formatted = auto_format(stat_value, column_name)
+            elif formatter == "currency":
+                formatted = format_currency(stat_value)
+            elif formatter == "probability":
+                formatted = format_probability(stat_value)
+            elif formatter == "percent":
+                formatted = format_percent(stat_value)
+            elif formatter == "ratio":
+                formatted = format_ratio(stat_value)
+            elif formatter == "count":
+                formatted = format_count(stat_value)
+            elif formatter == "score":
+                formatted = format_score(stat_value)
+            elif formatter == "days":
+                formatted = format_days(stat_value)
+            else:
+                formatted = str(stat_value)
+            
+            st.metric(stat_label, formatted, help=f"{label} distribution")
+
+
+# =============================================================================
+# SCIENTIFIC NOTE
+# =============================================================================
+
+def render_scientific_note(note: str, title: str = "Scientific note") -> None:
+    """Render a scientific methodology note."""
+    st.markdown(
+        f"""
+        <div style='
+            background: var(--info-soft);
+            border: 1px solid var(--info);
+            border-radius: var(--radius-lg);
+            padding: 14px 18px;
+            margin: 12px 0;
+        '>
+            <div style='color:var(--info);font-weight:700;font-size:var(--text-xs);letter-spacing:0.04em;text-transform:uppercase;margin-bottom:4px;'>{title}</div>
+            <div style='color:var(--text-secondary);font-size:var(--text-sm);line-height:1.55;'>{note}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# =============================================================================
 # SIDEBAR
 # =============================================================================
 
@@ -903,4 +1303,12 @@ __all__ = [
     "ACTION_COLORS",
     "SEGMENT_PALETTE",
     "PLOTLY_CONFIG",
+    "render_insight",
+    "render_insight_row",
+    "render_kpi_strip",
+    "render_metric_context",
+    "render_peer_benchmark",
+    "render_audience_table",
+    "render_distribution_summary",
+    "render_scientific_note",
 ]
