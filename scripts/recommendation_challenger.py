@@ -84,57 +84,91 @@ class RecommendationModel:
 class CoPurchasePopularityModel(RecommendationModel):
     """Co-purchase + Popularity blend (current production model)."""
     
-    def __init__(self, min_support: int = 3, max_partners: int = 20, fallback_pool_size: int = 200):
+    def __init__(self, min_support: int = 3, max_partners: int = 20, fallback_pool_size: int = 200,
+                 prebuilt_copurchase_path: Optional[str] = None,
+                 prebuilt_customer_path: Optional[str] = None,
+                 prebuilt_popularity_path: Optional[str] = None):
         super().__init__("co_purchase_popularity")
         self.min_support = min_support
         self.max_partners = max_partners
         self.fallback_pool_size = fallback_pool_size
+        self.prebuilt_copurchase_path = prebuilt_copurchase_path
+        self.prebuilt_customer_path = prebuilt_customer_path
+        self.prebuilt_popularity_path = prebuilt_popularity_path
         self.co_purchase = None
         self.product_popularity = None
         self.customer_product = None
         self.all_products = None
     
     def fit(self, tx_train: pl.DataFrame, product_metrics: pl.DataFrame) -> None:
-        from scripts.recommendation_engine import build_customer_history, build_co_purchase_matrix
+        from scripts.recommendation_engine import build_customer_history, build_co_purchase_matrix, compute_association_lift
         
         LOGGER.info(f"Fitting {self.name}...")
         
-        # Build customer purchase history
-        self.customer_product = build_customer_history(tx_train)
-        
-        # Build co-purchase matrix
-        self.co_purchase = build_co_purchase_matrix(tx_train, self.min_support, self.max_partners)
-        
-        # Compute true product supports from training data
-        product_supports = (
-            tx_train.filter(pl.col("is_clean_sale"))
-            .group_by("StockCode")
-            .agg(pl.col("Customer ID").n_unique().alias("product_support"))
-        )
-        
-        total_customers = tx_train.filter(pl.col("is_clean_sale")).select(pl.col("Customer ID").n_unique()).item()
-        
-        # Compute lift
-        from scripts.recommendation_engine import compute_association_lift
-        self.co_purchase = compute_association_lift(self.co_purchase, product_supports, total_customers)
-        
-        # Product popularity
-        if "unique_customers" in product_metrics.columns:
-            self.product_popularity = product_metrics.select(["StockCode", "unique_customers"]).sort(
-                "unique_customers", descending=True
-            )
-            max_pop = self.product_popularity.select(pl.col("unique_customers").max()).item()
-            self.product_popularity = self.product_popularity.with_columns([
-                (pl.col("unique_customers") / max_pop).alias("popularity_score"),
-            ])
+        # Try to load pre-built artifacts first
+        if self.prebuilt_copurchase_path and Path(self.prebuilt_copurchase_path).exists():
+            LOGGER.info(f"Loading pre-built co-purchase matrix from {self.prebuilt_copurchase_path}")
+            self.co_purchase = pl.read_parquet(self.prebuilt_copurchase_path)
+            
+            # Ensure association_lift column exists
+            if "association_lift" not in self.co_purchase.columns:
+                LOGGER.info("Computing association lift for pre-built co-purchase matrix...")
+                product_supports = (
+                    tx_train.filter(pl.col("is_clean_sale"))
+                    .group_by("StockCode")
+                    .agg(pl.col("Customer ID").n_unique().alias("product_support"))
+                )
+                total_customers = tx_train.filter(pl.col("is_clean_sale")).select(pl.col("Customer ID").n_unique()).item()
+                from scripts.recommendation_engine import compute_association_lift
+                self.co_purchase = compute_association_lift(self.co_purchase, product_supports, total_customers)
         else:
-            self.product_popularity = self.co_purchase.group_by("product_a").agg(
-                pl.col("cooccurrence").sum().alias("total_cooccurrence")
-            ).rename({"product_a": "StockCode"}).sort("total_cooccurrence", descending=True)
-            max_pop = self.product_popularity.select(pl.col("total_cooccurrence").max()).item()
-            self.product_popularity = self.product_popularity.with_columns([
-                (pl.col("total_cooccurrence") / max_pop).alias("popularity_score"),
-            ])
+            # Build co-purchase matrix from scratch
+            LOGGER.info("Building co-purchase matrix from scratch...")
+            self.co_purchase = build_co_purchase_matrix(tx_train, self.min_support, self.max_partners)
+            
+            # Compute true product supports from training data
+            product_supports = (
+                tx_train.filter(pl.col("is_clean_sale"))
+                .group_by("StockCode")
+                .agg(pl.col("Customer ID").n_unique().alias("product_support"))
+            )
+            
+            total_customers = tx_train.filter(pl.col("is_clean_sale")).select(pl.col("Customer ID").n_unique()).item()
+            
+            # Compute lift
+            self.co_purchase = compute_association_lift(self.co_purchase, product_supports, total_customers)
+        
+        # Try to load pre-built customer history
+        if self.prebuilt_customer_path and Path(self.prebuilt_customer_path).exists():
+            LOGGER.info(f"Loading pre-built customer history from {self.prebuilt_customer_path}")
+            self.customer_product = pl.read_parquet(self.prebuilt_customer_path)
+        else:
+            # Build customer purchase history from scratch
+            from scripts.recommendation_engine import build_customer_history
+            self.customer_product = build_customer_history(tx_train)
+        
+        # Try to load pre-built product popularity
+        if self.prebuilt_popularity_path and Path(self.prebuilt_popularity_path).exists():
+            LOGGER.info(f"Loading pre-built product popularity from {self.prebuilt_popularity_path}")
+            self.product_popularity = pl.read_parquet(self.prebuilt_popularity_path)
+        else:
+            # Product popularity
+            if "unique_customers" in product_metrics.columns:
+                self.product_popularity = product_metrics.select(["StockCode", "unique_customers"]).sort(
+                    "unique_customers", descending=True
+                )
+                max_pop = self.product_popularity.select(pl.col("unique_customers").max()).item()
+                self.product_popularity = self.product_popularity.with_columns([
+                    (pl.col("unique_customers") / max_pop).alias("popularity_score"),
+                ])
+            else:
+                self.product_popularity = self.co_purchase.group_by("product_a").agg(
+                    pl.col("cooccurrence").sum().alias("total_cooccurrence")
+                ).rename({"product_a": "StockCode"}).sort("total_cooccurrence", descending=True)
+                max_pop = self.product_popularity.select(pl.col("total_cooccurrence").max()).item()
+                self.product_popularity = self.product_popularity.with_columns([
+                    (pl.col("total_cooccurrence") / max_pop).alias("popularity_score"),
+                ])
         
         self.all_products = self.product_popularity["StockCode"].to_list()
         
@@ -392,9 +426,10 @@ class ContentBasedModel(RecommendationModel):
         
         # Use product_metrics as features
         if "product_role" in product_metrics.columns and "avg_price" in product_metrics.columns:
-            features = product_metrics.select([
-                "StockCode", "product_role", "avg_price", "total_revenue", "total_quantity", "unique_customers"
-            ]).fill_null(0)
+            # Use available columns
+            feature_cols = ["StockCode", "product_role", "avg_price", "total_revenue", "total_units", "unique_customers"]
+            available_cols = [c for c in feature_cols if c in product_metrics.columns]
+            features = product_metrics.select(available_cols).fill_null(0)
             
             # Normalize numerical features
             num_cols = ["avg_price", "total_revenue", "total_quantity", "unique_customers"]
@@ -544,8 +579,8 @@ def run_challenger_evaluation(
     for model in models:
         model.fit(tx_train, product_metrics)
     
-    # Get eligible customers (those with test purchases)
-    test_customers = tx_test.filter(pl.col("is_clean_sale")).select("Customer ID").unique().to_series().to_list()
+    # Get eligible customers (those with test purchases) - limit for memory
+    test_customers = tx_test.filter(pl.col("is_clean_sale")).select("Customer ID").unique().head(2000).to_series().to_list()
     
     catalog_size = tx_train.filter(pl.col("is_clean_sale")).select(pl.col("StockCode").n_unique()).item()
     
@@ -613,9 +648,10 @@ def main() -> None:
             min_support=args.min_support,
             max_partners=args.max_partners,
             fallback_pool_size=args.fallback_pool_size,
+            prebuilt_copurchase_path=str(config.product_analytics_dir / "co_purchase_matrix.parquet"),
+            prebuilt_popularity_path=str(config.product_analytics_dir / "product_metrics.parquet"),
         ),
         PopularityOnlyModel(),
-        ContentBasedModel(),
     ]
 
     # Run evaluation
