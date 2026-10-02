@@ -50,6 +50,7 @@ from retail_ds.transactions import classify_transactions, compute_financial_meas
 from retail_ds.customer_month import build_customer_month_panel, add_rolling_features
 from retail_ds.features import build_point_in_time_features
 from retail_ds.validation import run_all_validations, assert_validations_pass
+from retail_ds.config import ProjectConfig, load_config, add_config_args
 
 
 SEED = 42
@@ -71,8 +72,9 @@ LOGGER = setup_logger()
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Reactivation model for inactive customers.")
-    parser.add_argument("--input", default="./data_xslx/online_retail_II.xlsx", help="Input file.")
-    parser.add_argument("--output-dir", default="./reactivation_output", help="Output directory.")
+    add_config_args(parser)
+    parser.add_argument("--input", default=None, help="Input file (overrides config).")
+    parser.add_argument("--output-dir", default=None, help="Output directory (overrides config).")
     parser.add_argument("--sheet", default=None, help="Optional Excel sheet name.")
     parser.add_argument("--horizon-months", type=int, default=3, help="Reactivation horizon in months.")
     parser.add_argument("--inactive-threshold-months", type=int, default=3, help="Months of inactivity to define inactive.")
@@ -203,6 +205,26 @@ def temporal_split(
     return train_df, val_df, test_df
 
 
+def integrate_clv_and_segment(
+    panel: pl.DataFrame,
+    config: ProjectConfig,
+) -> pl.DataFrame:
+    """Integrate CLV proxy and segment labels as features."""
+    # Load CLV predictions
+    clv_path = config.clv_dir / "clv_customer_predictions.csv"
+    if clv_path.exists():
+        clv_df = pl.read_csv(clv_path).select(["Customer ID", "clv_mean"])
+        panel = panel.join(clv_df, on="Customer ID", how="left")
+    
+    # Load segment labels
+    seg_path = config.segmentation_dir / "customer_segments.parquet"
+    if seg_path.exists():
+        seg_df = pl.read_parquet(seg_path).select(["Customer ID", "segment", "segment_name", "segment_confidence"])
+        panel = panel.join(seg_df, on="Customer ID", how="left")
+    
+    return panel
+
+
 def train_calibrated_model(
     X_train: np.ndarray, y_train: np.ndarray,
     X_val: np.ndarray, y_val: np.ndarray,
@@ -291,8 +313,13 @@ def save_plots(
 
 def main() -> None:
     args = parse_args()
-    input_path = Path(args.input).expanduser().resolve()
-    output_dir = Path(args.output_dir).expanduser().resolve()
+
+    config_path = Path(args.config).expanduser().resolve()
+    project_root = Path(__file__).resolve().parent.parent
+    config = load_config(config_path, project_root)
+
+    input_path = Path(args.input).expanduser().resolve() if args.input else config.raw_data_path
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else config.reactivation_dir
 
     if not input_path.exists():
         raise FileNotFoundError(f"Input not found: {input_path}")
@@ -303,7 +330,7 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # Load canonical transactions
     # -------------------------------------------------------------------------
-    canonical_path = Path("data_quality_output/canonical_transactions.parquet")
+    canonical_path = config.data_quality_dir / "canonical_transactions.parquet"
     if canonical_path.exists():
         LOGGER.info("Loading canonical transactions...")
         tx = pl.read_parquet(canonical_path)
@@ -331,6 +358,9 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # Feature selection and temporal split
     # -------------------------------------------------------------------------
+    # Integrate CLV and segment features
+    panel = integrate_clv_and_segment(panel, config)
+    
     feature_cols = prepare_reactivation_features(panel)
     train_df, val_df, test_df = temporal_split(panel, args.validation_months, args.validation_months)
 
@@ -423,6 +453,25 @@ def main() -> None:
 
     # Panel
     panel.write_parquet(output_dir / "reactivation_panel.parquet")
+
+    import pandas as pd
+    manifest = {
+        "run_id": getattr(args, "run_id", None),
+        "config_hash": config.config_hash,
+        "data_version": config.config_hash,
+        "code_version": "v1",
+        "generated_at": pd.Timestamp.now().isoformat(),
+        "observation_start": metadata["observation_start"],
+        "observation_end": metadata["observation_end"],
+        "files": [
+            "reactivation_predictions.csv",
+            "reactivation_panel.parquet",
+            "feature_importance.csv",
+            "model_card.json",
+        ],
+    }
+    with open(output_dir / "run_manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2, default=str)
 
     # Plots
     if not args.skip_plots:

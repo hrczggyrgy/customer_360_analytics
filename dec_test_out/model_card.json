@@ -1,0 +1,52 @@
+{
+  "model_name": "Observational Next-Best-Action Decision Engine",
+  "methodology": "Multi-signal scoring with capacity-aware allocation",
+  "policy_type": "OBSERVATIONAL - not causal",
+  "actions": [
+    "protect_value",
+    "accelerate_purchase",
+    "reactivate",
+    "cross_sell",
+    "nurture",
+    "monitor"
+  ],
+  "capacity_constraints": {
+    "total": 1000,
+    "reactivate": 300,
+    "accelerate_purchase": 400,
+    "cross_sell": 300,
+    "nurture": 500
+  },
+  "confidence_threshold": 0.5,
+  "action_distribution": {
+    "monitor": 4823,
+    "protect_value": 398,
+    "reactivate": 300,
+    "cross_sell": 300,
+    "accelerate_purchase": 2
+  },
+  "allocation_diagnostics": {
+    "total_allocated": 1000,
+    "total_capacity": 1000,
+    "per_action_allocated": {
+      "protect_value": 398,
+      "accelerate_purchase": 2,
+      "reactivate": 300,
+      "cross_sell": 300,
+      "nurture": 0
+    },
+    "per_action_capacity": {
+      "protect_value": 1000,
+      "reactivate": 300,
+      "accelerate_purchase": 400,
+      "cross_sell": 300,
+      "nurture": 500
+    }
+  },
+  "known_limitations": [
+    "Observational policy - does not estimate causal treatment effects",
+    "No A/B test validation of action effectiveness",
+    "Assumes independent additive value of actions",
+    "Capacity constraints are hard caps, not optimized"
+  ]
+}

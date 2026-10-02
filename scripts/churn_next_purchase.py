@@ -41,6 +41,7 @@ from retail_ds.cleaning import clean_transactions, add_calendar_fields
 from retail_ds.transactions import classify_transactions, compute_financial_measures
 from retail_ds.customer_month import build_customer_month_panel, add_rolling_features
 from retail_ds.validation import run_all_validations, assert_validations_pass
+from retail_ds.config import ProjectConfig, load_config, add_config_args
 
 
 SEED = 42
@@ -62,8 +63,9 @@ LOGGER = setup_logger()
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Customer churn/next-purchase modeling.")
-    parser.add_argument("--input", default="./data_xslx/online_retail_II.xlsx", help="Input file.")
-    parser.add_argument("--output-dir", default="./churn_next_purchase_output", help="Output directory.")
+    add_config_args(parser)
+    parser.add_argument("--input", default=None, help="Input file (overrides config).")
+    parser.add_argument("--output-dir", default=None, help="Output directory (overrides config).")
     parser.add_argument("--sheet", default=None, help="Optional Excel sheet name.")
     parser.add_argument("--test-months", type=int, default=3, help="Final calendar months reserved for test.")
     parser.add_argument("--validation-months", type=int, default=2, help="Months before test reserved for validation.")
@@ -335,8 +337,14 @@ def save_plots(
 
 def main() -> None:
     args = parse_args()
-    input_path = Path(args.input).expanduser().resolve()
-    output_dir = Path(args.output_dir).expanduser().resolve()
+
+    import pandas as pd
+    config_path = Path(args.config).expanduser().resolve()
+    project_root = Path(__file__).resolve().parent.parent
+    config = load_config(config_path, project_root)
+
+    input_path = Path(args.input).expanduser().resolve() if args.input else config.raw_data_path
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else config.churn_dir
 
     if not input_path.exists():
         raise FileNotFoundError(f"Input not found: {input_path}")
@@ -349,7 +357,7 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # Load canonical transactions
     # -------------------------------------------------------------------------
-    canonical_path = Path("data_quality_output/canonical_transactions.parquet")
+    canonical_path = config.data_quality_dir / "canonical_transactions.parquet"
     if canonical_path.exists():
         LOGGER.info("Loading canonical transactions...")
         tx = pl.read_parquet(canonical_path)
@@ -510,6 +518,24 @@ def main() -> None:
 
     # Panel
     panel.write_parquet(output_dir / "customer_month_panel.parquet")
+
+    import pandas as pd
+    manifest = {
+        "run_id": getattr(args, "run_id", None),
+        "config_hash": config.config_hash,
+        "data_version": config.config_hash,
+        "code_version": "v1",
+        "generated_at": pd.Timestamp.now().isoformat(),
+        "observation_start": metadata["observation_start"],
+        "observation_end": metadata["observation_end"],
+        "files": [
+            "customer_churn_next_purchase.csv",
+            "customer_month_panel.parquet",
+            "model_card.json",
+        ],
+    }
+    with open(output_dir / "run_manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2, default=str)
 
     # Plots
     if not args.skip_plots:

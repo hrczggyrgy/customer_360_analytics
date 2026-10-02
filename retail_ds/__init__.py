@@ -8,6 +8,8 @@ This package provides canonical implementations for:
 - Point-in-time feature engineering
 - Data quality validation and reconciliation
 - Temporal backtesting framework
+- Configuration management
+- Data contracts and schema validation
 """
 
 from retail_ds.io import load_raw_transactions, normalize_columns
@@ -30,6 +32,25 @@ from retail_ds.validation import (
     ValidationResult,
 )
 from retail_ds.backtesting import rolling_origin_split, TemporalSplit
+from retail_ds.config import (
+    ProjectConfig,
+    load_config,
+    add_config_args,
+    get_config,
+    reset_config,
+    get_project_root,
+)
+from retail_ds.contracts import (
+    validate_schema,
+    validate_canonical_transactions,
+    validate_customer_month,
+    validate_customer_360,
+    validate_artifact,
+    analyze_duplicates,
+    ValidationReport,
+    ContractViolation,
+    CONTRACTS,
+)
 
 __version__ = "0.1.0"
 
@@ -52,9 +73,26 @@ __all__ = [
     "FEATURE_REGISTRY",
     # Validation
     "validate_schema",
-    "validate_reconciliation",
+    "run_all_validations",
+    "assert_validations_pass",
     "ValidationResult",
     # Backtesting
     "rolling_origin_split",
     "TemporalSplit",
+    # Config
+    "ProjectConfig",
+    "load_config",
+    "add_config_args",
+    "get_config",
+    "reset_config",
+    "get_project_root",
+    # Contracts
+    "validate_canonical_transactions",
+    "validate_customer_month",
+    "validate_customer_360",
+    "validate_artifact",
+    "analyze_duplicates",
+    "ValidationReport",
+    "ContractViolation",
+    "CONTRACTS",
 ]

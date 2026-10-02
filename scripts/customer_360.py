@@ -39,6 +39,7 @@ from retail_ds.customer_month import build_customer_month_panel, add_rolling_fea
 from retail_ds.features import build_point_in_time_features, FEATURE_REGISTRY
 from retail_ds.validation import run_all_validations, assert_validations_pass
 from retail_ds.backtesting import rolling_origin_split
+from retail_ds.config import ProjectConfig, load_config, add_config_args
 
 
 SEED = 42
@@ -59,22 +60,21 @@ LOGGER = setup_logger()
 
 
 def parse_args() -> argparse.Namespace:
-    project_dir = Path(__file__).resolve().parent
-
     parser = argparse.ArgumentParser(
         description="Build Customer 360 feature mart with point-in-time feature engine."
     )
+    add_config_args(parser)
 
     parser.add_argument(
         "--input",
-        default=str(project_dir / "data_xslx" / "online_retail_II.xlsx"),
-        help="Input .xlsx/.xls/.csv/.parquet file.",
+        default=None,
+        help="Input .xlsx/.xls/.csv/.parquet file (overrides config).",
     )
 
     parser.add_argument(
         "--output-dir",
-        default=str(project_dir / "customer_360_output"),
-        help="Output directory.",
+        default=None,
+        help="Output directory (overrides config).",
     )
 
     parser.add_argument(
@@ -444,8 +444,13 @@ def build_current_state_features(
 
 def main() -> None:
     args = parse_args()
-    input_path = Path(args.input).expanduser().resolve()
-    output_dir = Path(args.output_dir).expanduser().resolve()
+
+    config_path = Path(args.config).expanduser().resolve()
+    project_root = Path(__file__).resolve().parent.parent
+    config = load_config(config_path, project_root)
+
+    input_path = Path(args.input).expanduser().resolve() if args.input else config.raw_data_path
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else config.customer_360_dir
 
     if not input_path.exists():
         raise FileNotFoundError(f"Input not found: {input_path}")
@@ -458,10 +463,9 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # Load canonical transactions (reuse from data_quality if available)
     # -------------------------------------------------------------------------
-    canonical_path = Path("data_quality_output/canonical_transactions.parquet")
+    canonical_path = config.data_quality_dir / "canonical_transactions.parquet"
     if canonical_path.exists():
         LOGGER.info("Loading canonical transactions from data_quality_output...")
-        import polars as pl
         tx = pl.read_parquet(canonical_path)
     else:
         LOGGER.info("Building canonical transactions from raw data...")
@@ -554,6 +558,33 @@ def main() -> None:
     val_output = [{"check": r.check_name, "passed": r.passed, "message": r.message, "severity": r.severity, "details": r.details} for r in validation_results]
     with open(output_dir / "validation_results.json", "w") as f:
         json.dump(val_output, f, indent=2, default=str)
+
+    import pandas as pd
+    manifest = {
+        "run_id": getattr(args, "run_id", None),
+        "config_hash": config.config_hash,
+        "data_version": config.config_hash,
+        "code_version": "v1",
+        "generated_at": pd.Timestamp.now().isoformat(),
+        "observation_start": metadata["observation_start"],
+        "observation_end": metadata["observation_end"],
+        "files": [
+            "customer_360_current.parquet",
+            "customer_360_current.csv",
+            "customer_360_metadata.json",
+            "feature_dictionary.json",
+            "feature_groups.json",
+            "validation_results.json",
+            "customer_month.parquet",
+            "features_at_20100930.parquet",
+            "features_at_20101231.parquet",
+            "features_at_20110331.parquet",
+            "features_at_20110630.parquet",
+            "features_at_20110930.parquet",
+        ],
+    }
+    with open(output_dir / "run_manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2, default=str)
 
     # -------------------------------------------------------------------------
     # Plots

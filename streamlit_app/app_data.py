@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import streamlit as st
 
-from .app_config import get_config, get_project_root
+from streamlit_app.app_config import get_config, get_project_root
 
 LOGGER = logging.getLogger("app_data")
 
@@ -71,15 +71,19 @@ EXPECTED_ARTIFACTS: Dict[str, Dict] = {
         ],
     },
     "customer_360": {
-        "primary": "customer_360_current.parquet",
+        "primary": "customer_360_unified.parquet",
         "required_columns": ["Customer ID"],
         "min_rows": 1,
         "supporting": [
+            "customer_360_unified.csv",
+            "customer_360_current.parquet",
             "customer_360_current.csv",
             "customer_360_metadata.json",
             "feature_dictionary.json",
             "feature_groups.json",
             "validation_results.json",
+            "unified_validation.json",
+            "model_card.json",
         ],
     },
     "segmentation": {
@@ -95,6 +99,10 @@ EXPECTED_ARTIFACTS: Dict[str, Dict] = {
             "segment_feature_medians_robust.csv",
             "cluster_model_candidates.csv",
             "model_metadata.json",
+            "rfm_segments.csv",
+            "rfm_comparison.json",
+            "segment_transition_matrix.csv",
+            "segment_transition_summary.csv",
         ],
     },
     "cohorts": {
@@ -127,6 +135,9 @@ EXPECTED_ARTIFACTS: Dict[str, Dict] = {
             "model_card.json",
             "run_manifest.json",
             "run_summary.json",
+            "bgnbd_benchmark/bgnbd_predictions.parquet",
+            "bgnbd_benchmark/bgnbd_params.json",
+            "bgnbd_benchmark/model_card.json",
         ],
     },
     "churn": {
@@ -138,6 +149,8 @@ EXPECTED_ARTIFACTS: Dict[str, Dict] = {
             "survival_feature_importance.csv",
             "survival_model_tuning.csv",
             "model_card.json",
+            "survival_churn_refactored/customer_churn_next_purchase.csv",
+            "survival_churn_refactored/model_card.json",
         ],
     },
     "reactivation": {
@@ -162,6 +175,17 @@ EXPECTED_ARTIFACTS: Dict[str, Dict] = {
             "product_role_summary.csv",
         ],
     },
+    "market_basket": {
+        "primary": "association_rules.parquet",
+        "required_columns": ["antecedent", "consequent", "support", "confidence", "lift"],
+        "min_rows": 1,
+        "supporting": [
+            "frequent_itemsets.parquet",
+            "model_card.json",
+            "association_rules.csv",
+            "frequent_itemsets.csv",
+        ],
+    },
     "recommendations": {
         "primary": "recommendations.parquet",
         "required_columns": ["Customer ID", "recommended_product", "score"],
@@ -169,6 +193,8 @@ EXPECTED_ARTIFACTS: Dict[str, Dict] = {
         "supporting": [
             "recommendations.csv",
             "model_card.json",
+            "recommendation_challenger/challenger_results.parquet",
+            "recommendation_challenger/model_card.json",
         ],
     },
     "decision_engine": {
@@ -193,20 +219,45 @@ class ArtifactRegistry:
 
     def _get_output_dir(self, module: str) -> Optional[Path]:
         """Resolve output directory for a module from config."""
-        output_key = module
-        if module == "churn":
-            output_key = "churn"
-        elif module == "decision_engine":
-            output_key = "decision_engine"
+        # Map module names to config keys
+        module_to_config = {
+            "data_quality": "data_quality",
+            "customer_360": "customer_360",
+            "segmentation": "segmentation",
+            "cohorts": "cohorts",
+            "clv": "clv",
+            "churn": "churn",
+            "reactivation": "reactivation",
+            "product_analytics": "product_analytics",
+            "market_basket": "recommendations",  # Uses recommendations dir
+            "recommendations": "recommendations",
+            "decision_engine": "decision_engine",
+        }
         
+        output_key = module_to_config.get(module, module)
         rel_path = self.config.get("outputs", {}).get(output_key)
         if not rel_path:
             return None
-        return self.project_root / rel_path
+        
+        base_dir = self.project_root / rel_path
+        
+        # Handle subdirectories
+        if module == "market_basket":
+            return base_dir / "market_basket"
+        elif module == "clv":
+            return base_dir  # bgnbd_benchmark is inside clv
+        elif module == "churn":
+            return base_dir  # survival_churn_refactored is inside churn
+        elif module == "recommendations":
+            return base_dir  # recommendation_challenger is inside recommendations
+        
+        return base_dir
 
     def _load_manifest(self, module: str, artifact: ArtifactInfo) -> None:
         """Load run manifest / model card metadata if available."""
         output_dir = self._get_output_dir(module)
+        if output_dir is None:
+            return
         
         # Try model_card.json first
         model_card_path = output_dir / "model_card.json"
@@ -312,7 +363,9 @@ class ArtifactRegistry:
             if path.suffix == ".parquet":
                 import pyarrow.parquet as pq
                 pf = pq.ParquetFile(path)
-                info.columns = pf.schema.names
+                # Use to_arrow_schema() to get proper column names including nested types
+                arrow_schema = pf.schema.to_arrow_schema()
+                info.columns = [field.name for field in arrow_schema]
                 info.row_count = pf.metadata.num_rows
             elif path.suffix == ".csv":
                 df = pd.read_csv(path, nrows=0)
@@ -423,6 +476,9 @@ class ArtifactRegistry:
     def load_model_card(self, module: str) -> Optional[Dict]:
         """Load model card for a module."""
         output_dir = self._get_output_dir(module)
+        if output_dir is None:
+            return None
+        
         card_path = output_dir / "model_card.json"
         if not card_path.exists():
             return None

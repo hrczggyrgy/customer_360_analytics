@@ -34,6 +34,7 @@ from retail_ds.validation import (
     validate_financial_reconciliation,
 )
 from retail_ds.customer_month import build_customer_month_panel
+from retail_ds.config import ProjectConfig, load_config, add_config_args
 
 
 SEED = 42
@@ -54,8 +55,9 @@ LOGGER = setup_logger()
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Data quality analysis for Online Retail II.")
-    parser.add_argument("--input", default="./data_xslx/online_retail_II.xlsx", help="Input .xlsx/.csv/.parquet file.")
-    parser.add_argument("--output-dir", default="./data_quality_output", help="Output directory.")
+    add_config_args(parser)
+    parser.add_argument("--input", default=None, help="Input .xlsx/.csv/.parquet file (overrides config).")
+    parser.add_argument("--output-dir", default=None, help="Output directory (overrides config).")
     parser.add_argument("--sheet", default=None, help="Optional Excel sheet name.")
     parser.add_argument("--fail-on-warning", action="store_true", help="Treat validation warnings as failures.")
     return parser.parse_args()
@@ -63,8 +65,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    input_path = Path(args.input).expanduser().resolve()
-    output_dir = Path(args.output_dir).expanduser().resolve()
+
+    config_path = Path(args.config).expanduser().resolve()
+    project_root = Path(__file__).resolve().parent.parent
+    config = load_config(config_path, project_root)
+
+    input_path = Path(args.input).expanduser().resolve() if args.input else config.raw_data_path
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else config.data_quality_dir
 
     if not input_path.exists():
         raise FileNotFoundError(f"Input not found: {input_path}")
@@ -205,6 +212,30 @@ def main() -> None:
     val_output = [{"check": r.check_name, "passed": r.passed, "message": r.message, "severity": r.severity, "details": r.details} for r in validation_results]
     with open(output_dir / "validation_results.json", "w") as f:
         json.dump(val_output, f, indent=2, default=str)
+
+    import pandas as pd
+    manifest = {
+        "run_id": getattr(args, "run_id", None),
+        "config_hash": config.config_hash,
+        "data_version": config.config_hash,
+        "code_version": "v1",
+        "generated_at": pd.Timestamp.now().isoformat(),
+        "observation_start": customer_month_dense.select(pl.col("calendar_month").min()).item(),
+        "observation_end": customer_month_dense.select(pl.col("calendar_month").max()).item(),
+        "files": [
+            "canonical_transactions.parquet",
+            "canonical_transactions.csv",
+            "customer_month.parquet",
+            "schema_report.csv",
+            "missingness_report.csv",
+            "duplicate_report.csv",
+            "transaction_type_report.csv",
+            "reconciliation_report.json",
+            "validation_results.json",
+        ],
+    }
+    with open(output_dir / "run_manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2, default=str)
 
     LOGGER.info("Data quality analysis complete. Outputs in %s", output_dir)
     LOGGER.info("Canonical transactions: %s rows", f"{canonical.height:,}")

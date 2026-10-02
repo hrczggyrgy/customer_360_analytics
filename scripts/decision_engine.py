@@ -40,6 +40,7 @@ from retail_ds.io import load_raw_transactions
 from retail_ds.cleaning import clean_transactions, add_calendar_fields
 from retail_ds.transactions import classify_transactions, compute_financial_measures
 from retail_ds.validation import run_all_validations, assert_validations_pass
+from retail_ds.config import ProjectConfig, load_config, add_config_args
 
 
 SEED = 42
@@ -61,14 +62,15 @@ LOGGER = setup_logger()
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Decision engine for next-best-action.")
-    parser.add_argument("--input", default="./data_xslx/online_retail_II.xlsx", help="Input file.")
-    parser.add_argument("--output-dir", default="./decision_engine_output", help="Output directory.")
+    add_config_args(parser)
+    parser.add_argument("--input", default=None, help="Input file (overrides config).")
+    parser.add_argument("--output-dir", default=None, help="Output directory (overrides config).")
     parser.add_argument("--sheet", default=None, help="Optional Excel sheet name.")
-    parser.add_argument("--clv-file", default="./clv_analysis_output/clv_customer_predictions.csv", help="CLV predictions.")
-    parser.add_argument("--churn-file", default="./churn_next_purchase_output/customer_churn_next_purchase.csv", help="Churn/next-purchase predictions.")
-    parser.add_argument("--reactivation-file", default="./reactivation_output/reactivation_predictions.csv", help="Reactivation predictions.")
-    parser.add_argument("--recommendations-file", default="./recommendation_output/recommendations.csv", help="Product recommendations.")
-    parser.add_argument("--segments-file", default="./online_retail_segmentation/customer_segments.parquet", help="Customer segments.")
+    parser.add_argument("--clv-file", default=None, help="CLV predictions (overrides config).")
+    parser.add_argument("--churn-file", default=None, help="Churn/next-purchase predictions (overrides config).")
+    parser.add_argument("--reactivation-file", default=None, help="Reactivation predictions (overrides config).")
+    parser.add_argument("--recommendations-file", default=None, help="Product recommendations (overrides config).")
+    parser.add_argument("--segments-file", default=None, help="Customer segments (overrides config).")
     parser.add_argument("--capacity-total", type=int, default=1000, help="Total contact capacity.")
     parser.add_argument("--capacity-reactivate", type=int, default=300, help="Reactivation contact capacity.")
     parser.add_argument("--capacity-accelerate", type=int, default=400, help="Acceleration contact capacity.")
@@ -327,71 +329,128 @@ def apply_capacity_constraints(
     capacity_cross_sell: int,
     capacity_nurture: int,
 ) -> pd.DataFrame:
-    """Apply capacity constraints with next-best-action fallback."""
+    """Apply capacity constraints with constrained optimization (greedy value-density)."""
 
-    action_caps = {
+    # Define actions we are allocating (excluding monitor for now)
+    actions = ["reactivate", "accelerate_purchase", "cross_sell", "nurture", "protect_value"]
+    # Map action names to capacity arguments
+    action_capacities = {
         "reactivate": capacity_reactivate,
         "accelerate_purchase": capacity_accelerate,
         "cross_sell": capacity_cross_sell,
         "nurture": capacity_nurture,
-        "protect_value": capacity_total,
-        "monitor": capacity_total,
+        "protect_value": capacity_total,  # protect_value shares total capacity
     }
 
-    action_order = ["protect_value", "accelerate_purchase", "reactivate", "cross_sell", "nurture", "monitor"]
+    # Helper functions to compute expected value for each action
+    def expected_value_protect_value(row):
+        return row["clv_mean"] * row["churn_probability"] * 0.3  # 30% value at risk
 
-    score_cols = {
-        "protect_value": "protect_value_score",
-        "accelerate_purchase": "accelerate_purchase_score",
-        "reactivate": "reactivate_score",
-        "cross_sell": "cross_sell_score",
-        "nurture": "nurture_score",
+    def expected_value_accelerate_purchase(row):
+        return row["clv_mean"] * row["next_purchase_30d_probability"] * 0.2
+
+    def expected_value_reactivate(row):
+        return row["lifetime_gross_revenue"] * row["reactivation_probability"] * 0.5
+
+    def expected_value_cross_sell(row):
+        return row["top_score"] * row["clv_mean"] * 0.3
+
+    def expected_value_nurture(row):
+        return row["clv_mean"] * 0.1
+
+    ev_funcs = {
+        "protect_value": expected_value_protect_value,
+        "accelerate_purchase": expected_value_accelerate_purchase,
+        "reactivate": expected_value_reactivate,
+        "cross_sell": expected_value_cross_sell,
+        "nurture": expected_value_nurture,
     }
 
-    allocated = {action: 0 for action in action_caps}
-    final_actions = []
+    # Helper functions to determine eligibility for each action
+    def eligible_protect_value(row):
+        # High CLV + High churn risk + High confidence
+        # We'll use the same conditions as in select_action for protect_value
+        return (row["churn_probability"] > 0.3)  # and row["protect_value_score"] >= confidence_threshold? 
+        # But we don't have confidence_threshold here. We'll use the score >= median as in the original?
+        # Instead, we'll reuse the logic from select_action: we need the score and threshold.
+        # Since we don't have the threshold, we'll approximate by using the score being above median.
+        # However, we are going to compute the score again? Let's avoid duplication.
+        # We'll compute the protect_value_score as in compute_decision_policy.
+        # But note: we are not given the confidence_threshold in this function.
+        # We'll assume that the score columns are still present and we can use them.
+        # We'll change: we will require that the action's score is above the median (as in the original fallback).
+        # This is not ideal but allows us to use the existing score columns.
+        return row["protect_value_score"] >= df["protect_value_score"].median()
 
-    for idx, row in df.sort_values("priority_score", ascending=False).iterrows():
-        original_action = row["recommended_action"]
+    def eligible_accelerate_purchase(row):
+        return (row["next_purchase_30d_probability"] > 0.3) and (row["accelerate_purchase_score"] >= df["accelerate_purchase_score"].median())
 
-        assigned = False
-        for candidate_action in action_order:
-            if candidate_action == original_action:
-                if allocated[candidate_action] < action_caps[candidate_action]:
-                    final_actions.append(candidate_action)
-                    allocated[candidate_action] += 1
-                    assigned = True
-                    break
-            else:
-                if candidate_action in score_cols:
-                    score_col = score_cols[candidate_action]
-                    if row[score_col] >= df[score_col].median() and allocated[candidate_action] < action_caps[candidate_action]:
-                        final_actions.append(candidate_action)
-                        allocated[candidate_action] += 1
-                        assigned = True
-                        break
-                elif candidate_action == "monitor":
-                    final_actions.append("monitor")
-                    allocated["monitor"] += 1
-                    assigned = True
-                    break
+    def eligible_reactivate(row):
+        return row["is_inactive"] and (row["reactivate_score"] >= df["reactivate_score"].median())
 
-        if not assigned:
-            final_actions.append("monitor")
-            allocated["monitor"] += 1
+    def eligible_cross_sell(row):
+        return row["is_active"] and (row["top_score"] > 0.2) and (row["cross_sell_score"] >= df["cross_sell_score"].median())
 
-    df = df.copy()
-    df["recommended_action_capped"] = final_actions
+    def eligible_nurture(row):
+        return (row["nurture_score"] >= df["nurture_score"].median())
 
-    if allocated["monitor"] > capacity_total:
-        monitor_mask = df["recommended_action_capped"] == "monitor"
-        monitor_df = df[monitor_mask].sort_values("priority_score", ascending=False)
-        df.loc[monitor_mask, "recommended_action_capped"] = "monitor"
-        if len(monitor_df) > capacity_total:
-            keep_idx = monitor_df.head(capacity_total).index
-            df.loc[~df.index.isin(keep_idx), "recommended_action_capped"] = "monitor"
+    eligibility_funcs = {
+        "protect_value": eligible_protect_value,
+        "accelerate_purchase": eligible_accelerate_purchase,
+        "reactivate": eligible_reactivate,
+        "cross_sell": eligible_cross_sell,
+        "nurture": eligible_nurture,
+    }
 
-    return df
+    # Build list of eligible customer-action pairs with expected value
+    candidates = []  # list of (customer_id, action, expected_value)
+    for idx, row in df.iterrows():
+        customer_id = row["Customer ID"]
+        for action in actions:
+            if eligibility_funcs[action](row):
+                ev = ev_funcs[action](row)
+                candidates.append((customer_id, action, ev))
+
+    # Sort by expected_value descending (value-density, cost=1)
+    candidates.sort(key=lambda x: x[2], reverse=True)
+
+    # Initialize allocation tracking
+    allocated_per_action = {action: 0 for action in actions}
+    allocated_per_customer = set()  # set of customer IDs that have been allocated an action
+    total_allocated = 0
+    # Map from customer_id to allocated action
+    customer_allocation = {}
+
+    # Greedy allocation
+    for customer_id, action, ev in candidates:
+        if customer_id in allocated_per_customer:
+            continue  # customer already got an action
+        if allocated_per_action[action] >= action_capacities[action]:
+            continue  # action capacity exceeded
+        if total_allocated >= capacity_total:
+            continue  # global capacity exceeded
+        # Allocate this action to this customer
+        allocated_per_action[action] += 1
+        allocated_per_customer.add(customer_id)
+        total_allocated += 1
+        customer_allocation[customer_id] = action
+
+    # Build the output DataFrame
+    df_out = df.copy()
+    # Default action is monitor
+    df_out["recommended_action_capped"] = "monitor"
+    # Override with allocated actions
+    for customer_id, action in customer_allocation.items():
+        df_out.loc[df_out["Customer ID"] == customer_id, "recommended_action_capped"] = action
+
+    # Compute diagnostics for model card (we'll add to model card later in main)
+    # We'll return the diagnostics as well? But we cannot change return type.
+    # Instead, we'll store them in the df_out as attributes? Not good.
+    # We'll compute them in main after calling this function.
+    # For now, we'll just return the df_out.
+    # The caller (main) can compute the diagnostics from the returned df_out.
+
+    return df_out
 
 
 def save_plots(output_dir: Path, df: pd.DataFrame) -> None:
@@ -455,8 +514,13 @@ def save_plots(output_dir: Path, df: pd.DataFrame) -> None:
 
 def main() -> None:
     args = parse_args()
-    input_path = Path(args.input).expanduser().resolve()
-    output_dir = Path(args.output_dir).expanduser().resolve()
+
+    config_path = Path(args.config).expanduser().resolve()
+    project_root = Path(__file__).resolve().parent.parent
+    config = load_config(config_path, project_root)
+
+    input_path = Path(args.input).expanduser().resolve() if args.input else config.raw_data_path
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else config.decision_engine_dir
 
     if not input_path.exists():
         raise FileNotFoundError(f"Input not found: {input_path}")
@@ -464,37 +528,41 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "plots").mkdir(exist_ok=True)
 
-    # -------------------------------------------------------------------------
-    # Load all prediction files
-    # -------------------------------------------------------------------------
+    
     LOGGER.info("Loading prediction files...")
     
+    clv_file = Path(args.clv_file).expanduser().resolve() if args.clv_file else config.clv_dir / "clv_customer_predictions.csv"
+    churn_file = Path(args.churn_file).expanduser().resolve() if args.churn_file else config.churn_dir / "customer_churn_next_purchase.csv"
+    reactivation_file = Path(args.reactivation_file).expanduser().resolve() if args.reactivation_file else config.reactivation_dir / "reactivation_predictions.csv"
+    recommendations_file = Path(args.recommendations_file).expanduser().resolve() if args.recommendations_file else config.recommendations_dir / "recommendations.csv"
+    segments_file = Path(args.segments_file).expanduser().resolve() if args.segments_file else config.segmentation_dir / "customer_segments.parquet"
+    
     clv_df = load_predictions(
-        Path(args.clv_file),
+        clv_file,
         ["Customer ID", "clv_mean"],
         {"clv": "clv_mean", "clv_lower": "clv_p10", "clv_upper": "clv_p90"}
     )
     
     churn_df = load_predictions(
-        Path(args.churn_file),
+        churn_file,
         ["Customer ID"],
         {"churn_prob": "churn_probability", "next_purchase_30d": "next_purchase_30d_probability"}
     )
     
     reactivation_df = load_predictions(
-        Path(args.reactivation_file),
+        reactivation_file,
         ["Customer ID"],
         {"reactivation_prob": "reactivation_probability"}
     )
     
     recommendations_df = load_predictions(
-        Path(args.recommendations_file),
+        recommendations_file,
         ["Customer ID", "recommended_product", "score", "reason"],
     )
     
     segments_df = pd.DataFrame()
-    if Path(args.segments_file).exists():
-        segments_df = pd.read_parquet(Path(args.segments_file).expanduser().resolve())
+    if segments_file.exists():
+        segments_df = pd.read_parquet(segments_file)
         segments_df["Customer ID"] = pd.to_numeric(segments_df["Customer ID"], errors="coerce").astype("Int64")
         segments_df = segments_df.dropna(subset=["Customer ID"])
     
@@ -542,7 +610,7 @@ def main() -> None:
     available_cols = [c for c in output_cols if c in df.columns]
     df[available_cols].to_csv(output_dir / "customer_decision_scores.csv", index=False)
     
-    # Action summary
+# Action summary
     action_summary = df.groupby("recommended_action_capped").agg(
         customers=("Customer ID", "count"),
         avg_priority=("priority_score", "mean"),
@@ -552,6 +620,24 @@ def main() -> None:
     ).reset_index().rename(columns={"recommended_action_capped": "final_action"})
     action_summary.to_csv(output_dir / "action_summary.csv", index=False)
     
+    # Allocation diagnostics for model card
+    total_allocated = (df["recommended_action_capped"] != "monitor").sum()
+    per_action_allocated = {}
+    for action in ["protect_value", "accelerate_purchase", "reactivate", "cross_sell", "nurture"]:
+        per_action_allocated[action] = (df["recommended_action_capped"] == action).sum()
+    allocation_diagnostics = {
+        "total_allocated": int(total_allocated),
+        "total_capacity": args.capacity_total,
+        "per_action_allocated": {k: int(v) for k, v in per_action_allocated.items()},
+        "per_action_capacity": {
+            "protect_value": args.capacity_total,
+            "reactivate": args.capacity_reactivate,
+            "accelerate_purchase": args.capacity_accelerate,
+            "cross_sell": args.capacity_cross_sell,
+            "nurture": args.capacity_nurture,
+        },
+    }
+
     # Model card
     with open(output_dir / "model_card.json", "w") as f:
         json.dump({
@@ -568,6 +654,7 @@ def main() -> None:
             },
             "confidence_threshold": args.confidence_threshold,
             "action_distribution": df["recommended_action_capped"].value_counts().to_dict(),
+            "allocation_diagnostics": allocation_diagnostics,
             "known_limitations": [
                 "Observational policy - does not estimate causal treatment effects",
                 "No A/B test validation of action effectiveness",
@@ -575,7 +662,23 @@ def main() -> None:
                 "Capacity constraints are hard caps, not optimized",
             ],
         }, f, indent=2, default=str)
-    
+
+    import pandas as pd
+    manifest = {
+        "run_id": getattr(args, "run_id", None),
+        "config_hash": config.config_hash,
+        "data_version": config.config_hash,
+        "code_version": "v1",
+        "generated_at": pd.Timestamp.now().isoformat(),
+        "files": [
+            "customer_decision_scores.csv",
+            "action_summary.csv",
+            "model_card.json",
+        ],
+    }
+    with open(output_dir / "run_manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2, default=str)
+
     # Plots
     if not args.skip_plots:
         LOGGER.info("Generating plots...")

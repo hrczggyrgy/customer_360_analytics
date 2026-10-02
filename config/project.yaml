@@ -3,7 +3,7 @@
 # Data paths
 data:
   raw:
-    online_retail_ii: "data_xslx/online_retail_II.xlsx"
+    online_retail_ii: "data/online_retail_II_combined.csv"
   processed:
     canonical_transactions: "data_quality_output/canonical_transactions.parquet"
     customer_month: "data_quality_output/customer_month.parquet"
@@ -11,7 +11,7 @@ data:
 # Output directories
 outputs:
   data_quality: "data_quality_output"
-  customer_360: "customer_360_output"
+  customer_360: "customer_360_output/unified"
   segmentation: "online_retail_segmentation"
   cohorts: "cohort_analysis_output"
   clv: "clv_analysis_output"

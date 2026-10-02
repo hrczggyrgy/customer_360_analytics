@@ -33,6 +33,7 @@ from retail_ds.transactions import classify_transactions, compute_financial_meas
 from retail_ds.customer_month import build_customer_month_panel
 from retail_ds.validation import run_all_validations, assert_validations_pass
 from scripts.product_analytics import build_co_purchase_matrix
+from retail_ds.config import ProjectConfig, load_config, add_config_args
 
 
 SEED = 42
@@ -54,10 +55,11 @@ LOGGER = setup_logger()
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Product recommendation engine (fully vectorized).")
-    parser.add_argument("--input", default="./data_xslx/online_retail_II.xlsx", help="Input file.")
-    parser.add_argument("--output-dir", default="./recommendation_output", help="Output directory.")
+    add_config_args(parser)
+    parser.add_argument("--input", default=None, help="Input file (overrides config).")
+    parser.add_argument("--output-dir", default=None, help="Output directory (overrides config).")
     parser.add_argument("--sheet", default=None, help="Optional Excel sheet name.")
-    parser.add_argument("--co-purchase-file", default="./product_analytics_output/co_purchase_matrix.parquet", help="Co-purchase matrix from product_analytics.")
+    parser.add_argument("--co-purchase-file", default=None, help="Co-purchase matrix from product_analytics (overrides config).")
     parser.add_argument("--top-k", type=int, default=10, help="Top K recommendations per customer.")
     parser.add_argument("--min-support", type=int, default=3, help="Minimum co-purchase support.")
     parser.add_argument("--max-partners", type=int, default=20, help="Max co-purchase partners per product.")
@@ -263,10 +265,14 @@ def generate_recommendations_vectorized(
         (0.7 * pl.col("co_purchase_score_norm") + 0.3 * pl.col("popularity_score")).alias("final_score"),
     ])
 
-    # Rank per customer
+    # Rank per customer with deterministic tie-breaking
+    # Sort by final_score descending, then by candidate_product for deterministic tie-breaking
+    scored = scored.sort(["Customer ID", "final_score", "candidate_product"], descending=[False, True, False])
     scored = scored.with_columns([
         pl.col("final_score").rank(descending=True).over("Customer ID").alias("rank"),
     ])
+    # Filter to top_k
+    scored = scored.filter(pl.col("rank") <= top_k).sort(["Customer ID", "rank"])
 
     # Take top-K
     top_k_recs = scored.filter(pl.col("rank") <= top_k).sort(["Customer ID", "rank"])
@@ -565,8 +571,8 @@ def evaluate_recommendations(
     else:
         metrics["catalog_coverage"] = float(n_recommended_products)
 
-    metrics["n_customers_evaluated"] = int(n_customers_eval)
-    metrics["n_customers_with_recommendations"] = int(n_customers_with_recs)
+    metrics["n_customers_evaluated"] = int(n_eligible)
+    metrics["n_customers_with_recommendations"] = int(n_with_recs)
     metrics["n_recommendations"] = int(recs.height)
 
     return metrics
@@ -702,10 +708,15 @@ def save_plots(
 
 def main() -> None:
     args = parse_args()
-    input_path = Path(args.input).expanduser().resolve()
-    output_dir = Path(args.output_dir).expanduser().resolve()
-    co_purchase_path = Path(args.co_purchase_file).expanduser().resolve()
-    product_metrics_path = Path("./product_analytics_output/product_metrics.parquet")
+
+    config_path = Path(args.config).expanduser().resolve()
+    project_root = Path(__file__).resolve().parent.parent
+    config = load_config(config_path, project_root)
+
+    input_path = Path(args.input).expanduser().resolve() if args.input else config.raw_data_path
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else config.recommendations_dir
+    co_purchase_path = Path(args.co_purchase_file).expanduser().resolve() if args.co_purchase_file else config.product_analytics_dir / "co_purchase_matrix.parquet"
+    product_metrics_path = config.product_analytics_dir / "product_metrics.parquet"
 
     if not input_path.exists():
         raise FileNotFoundError(f"Input not found: {input_path}")
@@ -716,7 +727,7 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # Load canonical transactions
     # -------------------------------------------------------------------------
-    canonical_path = Path("data_quality_output/canonical_transactions.parquet")
+    canonical_path = config.data_quality_dir / "canonical_transactions.parquet"
     if canonical_path.exists():
         LOGGER.info("Loading canonical transactions...")
         tx = pl.read_parquet(canonical_path)
@@ -891,6 +902,24 @@ def main() -> None:
     # Placeholder files (not applicable for this engine)
     pl.DataFrame().write_csv(output_dir / "feature_importance.csv")
     pl.DataFrame().write_csv(output_dir / "validation_predictions.csv")
+
+    import pandas as pd
+    manifest = {
+        "run_id": getattr(args, "run_id", None),
+        "config_hash": config.config_hash,
+        "data_version": config.config_hash,
+        "code_version": "v1",
+        "generated_at": pd.Timestamp.now().isoformat(),
+        "observation_start": metadata["observation_start"] if "metadata" in locals() else None,
+        "observation_end": metadata["observation_end"] if "metadata" in locals() else None,
+        "files": [
+            "recommendations.parquet",
+            "recommendations.csv",
+            "model_card.json",
+        ],
+    }
+    with open(output_dir / "run_manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2, default=str)
 
     # Plots
     if not args.skip_plots:

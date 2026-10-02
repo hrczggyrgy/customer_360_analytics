@@ -330,7 +330,7 @@ def plot_dual_axis_line_bar(
             gridcolor=tokens["xaxis"]["gridcolor"],
             linecolor=tokens["xaxis"]["linecolor"],
             tickfont=tokens["xaxis"]["tickfont"],
-            titlefont=tokens["xaxis"]["titlefont"],
+            title_font=tokens["xaxis"]["titlefont"],
         ),
         yaxis2=dict(
             title=line_name,
@@ -339,7 +339,7 @@ def plot_dual_axis_line_bar(
             showgrid=False,
             linecolor=tokens["xaxis"]["linecolor"],
             tickfont=tokens["xaxis"]["tickfont"],
-            titlefont=tokens["xaxis"]["titlefont"],
+            title_font=tokens["xaxis"]["titlefont"],
         ),
     )
     
@@ -348,7 +348,7 @@ def plot_dual_axis_line_bar(
         gridcolor=tokens["xaxis"]["gridcolor"],
         linecolor=tokens["xaxis"]["linecolor"],
         tickfont=tokens["xaxis"]["tickfont"],
-        titlefont=tokens["xaxis"]["titlefont"],
+        title_font=tokens["xaxis"]["titlefont"],
     )
     
     return apply_plotly_theme(fig, height=height, title=title)
@@ -814,7 +814,7 @@ def base_layout(
             linecolor=tokens.chart_axis,
             tickcolor=tokens.chart_axis,
             tickfont=dict(color=tokens.text_secondary, size=11),
-            titlefont=dict(color=tokens.text_secondary, size=12),
+            title_font=dict(color=tokens.text_secondary, size=12),
             zerolinecolor=tokens.border_subtle,
         ),
         yaxis=dict(
@@ -822,7 +822,7 @@ def base_layout(
             linecolor=tokens.chart_axis,
             tickcolor=tokens.chart_axis,
             tickfont=dict(color=tokens.text_secondary, size=11),
-            titlefont=dict(color=tokens.text_secondary, size=12),
+            title_font=dict(color=tokens.text_secondary, size=12),
             zerolinecolor=tokens.border_subtle,
         ),
         colorway=SEGMENT_PALETTE,

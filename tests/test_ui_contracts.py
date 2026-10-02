@@ -218,11 +218,12 @@ class TestArtifactRegistryContracts:
     """Tests for ArtifactRegistry contracts."""
 
     def test_expected_artifacts_defined(self):
-        assert len(EXPECTED_ARTIFACTS) == 10
+        assert len(EXPECTED_ARTIFACTS) == 11
         expected_modules = [
             "data_quality", "customer_360", "segmentation",
             "cohorts", "clv", "churn", "recommendations",
-            "decision_engine", "product_analytics", "reactivation"
+            "decision_engine", "product_analytics", "reactivation",
+            "market_basket"
         ]
         for module in expected_modules:
             assert module in EXPECTED_ARTIFACTS
