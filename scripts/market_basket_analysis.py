@@ -362,45 +362,28 @@ def enrich_rules_with_product_info(
         .unique(subset=["StockCode"], maintain_order=True)
     )
     
-    # Enrich antecedents
-    def enrich_column(df: pl.DataFrame, col: str, prefix: str) -> pl.DataFrame:
-        # This is tricky with list columns - use a simpler approach
-        # Just add descriptions for single-item antecedents/consequents
-        if df.height == 0:
-            return df
+    # Enrich single-item consequents with product description
+    # Keep original antecedent/consequent columns
+    single_consequent = rules.filter(pl.col("consequent").list.len() == 1).with_columns(
+        pl.col("consequent").list.first().alias("consequent_item")
+    )
+    
+    if single_consequent.height > 0:
+        enriched = single_consequent.join(
+            product_info.rename({"StockCode": "consequent_item", "Description": "consequent_description"}),
+            on="consequent_item",
+            how="left"
+        ).drop("consequent_item")
         
-        # For single-item rules, we can join
-        single_antecedent = df.filter(pl.col(col).list.len() == 1).with_columns(
-            pl.col(col).list.first().alias(f"{prefix}_item")
+        # Add empty description for multi-item consequents
+        multi_consequent = rules.filter(pl.col("consequent").list.len() > 1).with_columns(
+            pl.lit(None).cast(pl.Utf8).alias("consequent_description")
         )
         
-        if single_antecedent.height > 0:
-            enriched = single_antecedent.join(
-                product_info.rename({"StockCode": f"{prefix}_item", "Description": f"{prefix}_description"}),
-                on=f"{prefix}_item",
-                how="left"
-            ).drop(f"{prefix}_item")
-            
-            # Merge back
-            multi_antecedent = df.filter(pl.col(col).list.len() > 1).with_columns(
-                pl.lit(None).cast(pl.Utf8).alias(f"{prefix}_description")
-            )
-            
-            return pl.concat([enriched, multi_antecedent], how="diagonal_relaxed")
-        
-        return df.with_columns(pl.lit(None).cast(pl.Utf8).alias(f"{prefix}_description"))
+        return pl.concat([enriched, multi_consequent], how="diagonal_relaxed")
     
-    # Simple enrichment for single-item consequents
-    rules = rules.filter(pl.col("consequent").list.len() == 1)
-    rules = rules.with_columns(pl.col("consequent").list.first().alias("consequent_item"))
-    
-    rules = rules.join(
-        product_info.rename({"StockCode": "consequent_item", "Description": "consequent_description"}),
-        on="consequent_item",
-        how="left"
-    ).drop("consequent_item")
-    
-    return rules
+    # No single-item consequents, just add empty description column
+    return rules.with_columns(pl.lit(None).cast(pl.Utf8).alias("consequent_description"))
 
 
 def save_plots(
@@ -531,12 +514,15 @@ def main() -> None:
 
     canonical_path = config.data_quality_dir / "canonical_transactions.parquet"
 
-    # Load and prepare transactions
-    tx = load_and_prepare_transactions(canonical_path, config, args)
-
-    # Run validations
-    validation_results = run_all_validations(tx=tx)
+    # Load canonical transactions for validation
+    canonical_tx = pl.read_parquet(canonical_path)
+    
+    # Run validations on full canonical transactions
+    validation_results = run_all_validations(tx=canonical_tx)
     assert_validations_pass(validation_results)
+
+    # Load and prepare transactions for market basket analysis (clean sales only)
+    tx = load_and_prepare_transactions(canonical_path, config, args)
 
     # Compute frequent itemsets
     frequent_itemsets = compute_frequent_itemsets_apriori(
@@ -547,9 +533,12 @@ def main() -> None:
         LOGGER.warning("No frequent itemsets found. Try lowering min-support.")
         return
 
-    # Save frequent itemsets
+    # Save frequent itemsets (convert list to string for CSV)
+    freq_to_save = frequent_itemsets.with_columns(
+        pl.col("itemset").list.join(", ").alias("itemset_str")
+    ).drop("itemset")
     frequent_itemsets.write_parquet(output_dir / "frequent_itemsets.parquet")
-    frequent_itemsets.write_csv(output_dir / "frequent_itemsets.csv")
+    freq_to_save.write_csv(output_dir / "frequent_itemsets.csv")
 
     # Generate association rules
     rules = compute_association_rules(
@@ -565,9 +554,13 @@ def main() -> None:
         # Enrich with product info
         rules = enrich_rules_with_product_info(rules, product_metrics_path)
         
-        # Save rules
+        # Save rules (convert lists to strings for CSV)
+        rules_to_save = rules.with_columns(
+            pl.col("antecedent").list.join(", ").alias("antecedent_str"),
+            pl.col("consequent").list.join(", ").alias("consequent_str"),
+        ).drop(["antecedent", "consequent"])
         rules.write_parquet(output_dir / "association_rules.parquet")
-        rules.write_csv(output_dir / "association_rules.csv")
+        rules_to_save.write_csv(output_dir / "association_rules.csv")
 
     # Model card
     model_card = {

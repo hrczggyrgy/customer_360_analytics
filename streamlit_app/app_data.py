@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import streamlit as st
 
-from .app_config import get_config, get_project_root
+from streamlit_app.app_config import get_config, get_project_root
 
 LOGGER = logging.getLogger("app_data")
 
@@ -176,14 +176,14 @@ EXPECTED_ARTIFACTS: Dict[str, Dict] = {
         ],
     },
     "market_basket": {
-        "primary": "market_basket/association_rules.parquet",
+        "primary": "association_rules.parquet",
         "required_columns": ["antecedent", "consequent", "support", "confidence", "lift"],
         "min_rows": 1,
         "supporting": [
-            "market_basket/frequent_itemsets.parquet",
-            "market_basket/model_card.json",
-            "market_basket/association_rules.csv",
-            "market_basket/frequent_itemsets.csv",
+            "frequent_itemsets.parquet",
+            "model_card.json",
+            "association_rules.csv",
+            "frequent_itemsets.csv",
         ],
     },
     "recommendations": {
@@ -363,7 +363,9 @@ class ArtifactRegistry:
             if path.suffix == ".parquet":
                 import pyarrow.parquet as pq
                 pf = pq.ParquetFile(path)
-                info.columns = pf.schema.names
+                # Use to_arrow_schema() to get proper column names including nested types
+                arrow_schema = pf.schema.to_arrow_schema()
+                info.columns = [field.name for field in arrow_schema]
                 info.row_count = pf.metadata.num_rows
             elif path.suffix == ".csv":
                 df = pd.read_csv(path, nrows=0)

@@ -218,30 +218,52 @@ def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
     
     # Lifetime value tier
     if "lifetime_gross_revenue" in df.columns:
-        df["value_tier"] = pd.qcut(
-            df["lifetime_gross_revenue"], 
-            q=4, 
-            labels=["Bronze", "Silver", "Gold", "Platinum"],
-            duplicates="drop"
-        )
+        try:
+            df["value_tier"] = pd.qcut(
+                df["lifetime_gross_revenue"], 
+                q=4, 
+                labels=["Bronze", "Silver", "Gold", "Platinum"],
+                duplicates="drop"
+            )
+        except ValueError:
+            # Fallback: use cut with equal-width bins
+            df["value_tier"] = pd.cut(
+                df["lifetime_gross_revenue"], 
+                bins=4, 
+                labels=["Bronze", "Silver", "Gold", "Platinum"]
+            )
     
     # Engagement tier
     if "lifetime_orders" in df.columns:
-        df["engagement_tier"] = pd.qcut(
-            df["lifetime_orders"], 
-            q=4, 
-            labels=["Low", "Medium", "High", "Very High"],
-            duplicates="drop"
-        )
+        try:
+            df["engagement_tier"] = pd.qcut(
+                df["lifetime_orders"], 
+                q=4, 
+                labels=["Low", "Medium", "High", "Very High"],
+                duplicates="drop"
+            )
+        except ValueError:
+            df["engagement_tier"] = pd.cut(
+                df["lifetime_orders"], 
+                bins=4, 
+                labels=["Low", "Medium", "High", "Very High"]
+            )
     
     # Action priority tier
     if "priority_score" in df.columns:
-        df["action_priority_tier"] = pd.qcut(
-            df["priority_score"].fillna(0),
-            q=4,
-            labels=["Low", "Medium", "High", "Critical"],
-            duplicates="drop"
-        )
+        try:
+            df["action_priority_tier"] = pd.qcut(
+                df["priority_score"].fillna(0),
+                q=4,
+                labels=["Low", "Medium", "High", "Critical"],
+                duplicates="drop"
+            )
+        except ValueError:
+            df["action_priority_tier"] = pd.cut(
+                df["priority_score"].fillna(0),
+                bins=4,
+                labels=["Low", "Medium", "High", "Critical"]
+            )
     
     return df
 

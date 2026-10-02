@@ -11,7 +11,7 @@ data:
 # Output directories
 outputs:
   data_quality: "data_quality_output"
-  customer_360: "customer_360_output"
+  customer_360: "customer_360_output/unified"
   segmentation: "online_retail_segmentation"
   cohorts: "cohort_analysis_output"
   clv: "clv_analysis_output"
