@@ -54,6 +54,7 @@ from retail_ds.customer_month import build_customer_month_panel, add_rolling_fea
 from retail_ds.validation import run_all_validations, assert_validations_pass
 from retail_ds.backtesting import rolling_origin_split, TemporalSplit
 from retail_ds.features import build_point_in_time_features
+from retail_ds.config import ProjectConfig, load_config, add_config_args
 
 
 SEED = 42
@@ -74,11 +75,10 @@ LOGGER = setup_logger()
 
 
 def parse_args() -> argparse.Namespace:
-    project_dir = Path(__file__).resolve().parent
-
     parser = argparse.ArgumentParser(description="Dynamic Probabilistic Discounted Net-Revenue CLV Proxy.")
-    parser.add_argument("--input", default=str(project_dir / "data_xslx" / "online_retail_II.xlsx"), help="Input .xlsx/.xls/.csv/.parquet file.")
-    parser.add_argument("--output-dir", default=str(project_dir / "clv_analysis_output"), help="Directory where CLV outputs are written.")
+    add_config_args(parser)
+    parser.add_argument("--input", default=None, help="Input .xlsx/.xls/.csv/.parquet file (overrides config).")
+    parser.add_argument("--output-dir", default=None, help="Directory where CLV outputs are written (overrides config).")
     parser.add_argument("--sheet", default=None, help="Optional Excel sheet name.")
     parser.add_argument("--horizon-months", type=int, default=24, help="Future CLV simulation horizon.")
     parser.add_argument("--simulations", type=int, default=200, help="Monte-Carlo paths per customer.")
@@ -575,8 +575,13 @@ def run_backtests(
 
 def main() -> None:
     args = parse_args()
-    input_path = Path(args.input).expanduser().resolve()
-    output_dir = Path(args.output_dir).expanduser().resolve()
+
+    config_path = Path(args.config).expanduser().resolve()
+    project_root = Path(__file__).resolve().parent.parent
+    config = load_config(config_path, project_root)
+
+    input_path = Path(args.input).expanduser().resolve() if args.input else config.raw_data_path
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else config.clv_dir
 
     if not input_path.exists():
         raise FileNotFoundError(f"Input not found: {input_path}")
@@ -589,7 +594,7 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # Load canonical transactions
     # -------------------------------------------------------------------------
-    canonical_path = Path("data_quality_output/canonical_transactions.parquet")
+    canonical_path = config.data_quality_dir / "canonical_transactions.parquet"
     if canonical_path.exists():
         LOGGER.info("Loading canonical transactions...")
         tx = pl.read_parquet(canonical_path)
@@ -693,6 +698,25 @@ def main() -> None:
 
     # Calibration data
     pd.DataFrame(val_preds).to_csv(output_dir / "validation_predictions.csv", index=False)
+
+    manifest = {
+        "run_id": getattr(args, "run_id", None),
+        "config_hash": config.config_hash,
+        "data_version": config.config_hash,
+        "code_version": "v1",
+        "generated_at": pd.Timestamp.now().isoformat(),
+        "observation_start": metadata["observation_start"],
+        "observation_end": metadata["observation_end"],
+        "files": [
+            "clv_customer_predictions.csv",
+            "clv_monthly_summary.csv",
+            "feature_importance.csv",
+            "validation_predictions.csv",
+            "model_card.json",
+        ],
+    }
+    with open(output_dir / "run_manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2, default=str)
 
     # Plots
     if not args.skip_plots:

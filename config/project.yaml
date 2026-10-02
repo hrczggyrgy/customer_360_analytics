@@ -3,7 +3,7 @@
 # Data paths
 data:
   raw:
-    online_retail_ii: "data_xslx/online_retail_II.xlsx"
+    online_retail_ii: "data/online_retail_II_combined.csv"
   processed:
     canonical_transactions: "data_quality_output/canonical_transactions.parquet"
     customer_month: "data_quality_output/customer_month.parquet"

@@ -1140,7 +1140,7 @@ def build_point_in_time_features(
 
         # Join all window data at once
         for wd in window_datas:
-            dynamic_features = dynamic_features.join(wd, on="Customer ID", how="outer", suffix="_right")
+            dynamic_features = dynamic_features.join(wd, on="Customer ID", how="full", suffix="_right")
             if "Customer ID_right" in dynamic_features.columns:
                 dynamic_features = dynamic_features.drop("Customer ID_right")
     country_features = (
