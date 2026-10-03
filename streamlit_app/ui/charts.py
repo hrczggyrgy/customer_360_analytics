@@ -408,7 +408,7 @@ def plot_decay_curve(
             y=decay_df[logo_col],
             mode="lines+markers",
             name="Logo retention",
-            line=dict(color=tokens["colorway"][0], width=3),
+line=dict(color=SEGMENT_PALETTE[0], width=3),
             marker=dict(size=8),
         ))
     
@@ -1063,7 +1063,7 @@ def plot_value_concentration_curve(
         annotate_thresholds: List of percentiles to annotate (e.g., [0.1, 0.2, 0.4])
         label_prefix: Prefix for annotations (e.g., "Top")
     """
-    tokens = get_plotly_theme()["layout"]
+    tokens = get_color_tokens()
     
     if annotate_thresholds is None:
         annotate_thresholds = [0.1, 0.2, 0.4]
@@ -1091,7 +1091,7 @@ def plot_value_concentration_curve(
         x=ranks,
         y=cumshare,
         mode="lines",
-        line=dict(color=tokens["colorway"][0], width=3),
+        line=dict(color=SEGMENT_PALETTE[0], width=3),
         name="Cumulative value share",
         hovertemplate=(
             "Customer percentile: %{x:.0%}<br>"
@@ -1127,11 +1127,11 @@ def plot_value_concentration_curve(
             arrowhead=2,
             arrowsize=1,
             arrowwidth=2,
-            arrowcolor=tokens["colorway"][0],
+            arrowcolor=SEGMENT_PALETTE[0],
             ax=40,
             ay=-40,
             bgcolor="rgba(255,255,255,0.9)",
-            bordercolor=tokens["colorway"][0],
+            bordercolor=SEGMENT_PALETTE[0],
             borderwidth=1,
             font=dict(size=11, color=tokens.text_primary),
         ))
@@ -1167,7 +1167,7 @@ def plot_peer_benchmark(
         title: Chart title
         height: Chart height
     """
-    tokens = get_plotly_theme()["layout"]
+    tokens = get_color_tokens()
     
     if metric_labels is None:
         metric_labels = {}

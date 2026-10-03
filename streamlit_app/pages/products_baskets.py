@@ -248,12 +248,17 @@ def render() -> None:
         
         # Add basket association strength if available
         if association_rules is not None:
+            # Convert list/array columns to strings for grouping
+            ar = association_rules.copy()
+            ar["antecedent_str"] = ar["antecedent"].apply(lambda x: str(x[0]) if isinstance(x, (list, tuple, np.ndarray)) else str(x))
+            ar["consequent_str"] = ar["consequent"].apply(lambda x: str(x[0]) if isinstance(x, (list, tuple, np.ndarray)) else str(x))
+            
             # Compute max lift per product as antecedent
-            antecedent_lift = association_rules.groupby("antecedent")["lift"].max().reset_index()
+            antecedent_lift = ar.groupby("antecedent_str")["lift"].max().reset_index()
             antecedent_lift.columns = ["StockCode", "max_basket_lift"]
             
             # Compute max lift per product as consequent
-            consequent_lift = association_rules.groupby("consequent")["lift"].max().reset_index()
+            consequent_lift = ar.groupby("consequent_str")["lift"].max().reset_index()
             consequent_lift.columns = ["StockCode", "max_affinity_lift"]
             
             pm = pm.merge(antecedent_lift, on="StockCode", how="left")

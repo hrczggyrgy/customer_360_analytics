@@ -54,7 +54,10 @@ def render() -> None:
     # =============================================================================
     render_section_label("Segment portfolio map")
     
-    if combined is not None and "segment_name" in combined.columns:
+    # Use hdbscan_segment from unified customer_360 (matches segmentation artifact)
+    seg_col = "hdbscan_segment" if combined is not None and "hdbscan_segment" in combined.columns else None
+    
+    if combined is not None and seg_col and seg_col in combined.columns:
         # Find value and activity columns
         clv_col = None
         for c in ["clv_mean", "clv", "predicted_clv", "customer_clv"]:
@@ -76,7 +79,7 @@ def render() -> None:
         
         if clv_col and churn_col and np_col:
             # Aggregate by segment
-            seg_col = "segment_name"
+            seg_col = "hdbscan_segment"
             seg_data = combined.dropna(subset=[seg_col]).copy()
             seg_data[clv_col] = pd.to_numeric(seg_data[clv_col], errors="coerce")
             seg_data[churn_col] = pd.to_numeric(seg_data[churn_col], errors="coerce")
@@ -116,7 +119,7 @@ def render() -> None:
         else:
             render_missing("CLV, churn, and purchase propensity columns needed for portfolio map.")
     else:
-        render_missing("Combined customer data with segment_name required.")
+        render_missing("Combined customer data with hdbscan_segment required.")
     
     # =============================================================================
     # SECTION 2: SEGMENT SCORECARD
@@ -141,7 +144,9 @@ def render() -> None:
         sort_by = st.selectbox("Sort by", sort_options, index=0, key="segment_sort")
         ascending = st.checkbox("Ascending", value=False, key="segment_sort_asc")
         
-        display_df = p[default_display].sort_values(sort_by, ascending=ascending)
+        display_df = p[default_display]
+        if sort_by in display_df.columns:
+            display_df = display_df.sort_values(sort_by, ascending=ascending)
         
         # Format for display
         for col in display_df.columns:
@@ -350,7 +355,7 @@ def render() -> None:
         if pca is not None:
             pc1 = "PC1" if "PC1" in pca.columns else "pc1"
             pc2 = "PC2" if "PC2" in pca.columns else "pc2"
-            ps = "segment_name" if "segment_name" in pca.columns else ("segment" if "segment" in pca.columns else "cluster")
+            ps = "segment" if "segment" in pca.columns else ("cluster" if "cluster" in pca.columns else "segment_name")
             
             if pc1 in pca.columns and pc2 in pca.columns:
                 from ..ui.charts import plot_pca_scatter
