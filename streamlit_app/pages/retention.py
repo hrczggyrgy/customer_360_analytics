@@ -16,6 +16,7 @@ from ..ui import (
     render_kpi_row,
     render_missing,
 )
+from ..ui.scope import apply_scope_to_dataframe
 from ..app_data import get_registry
 from ..app_formatting import format_probability, format_count
 from ..ui.charts import (
@@ -66,12 +67,12 @@ def render() -> None:
 
                 render_kpi_row([
                     {"label": "Customers scored", "value": len(values), "formatter": "count"},
-                    {"label": "Median churn risk", "value": values.median(), "formatter": "probability"},
+                    {"label": "Median inactivity risk", "value": values.median(), "formatter": "probability"},
                     {"label": "High risk (≥70%)", "value": (values >= 0.70).mean(), "formatter": "percent"},
                     {"label": "Very high risk (≥85%)", "value": (values >= 0.85).mean(), "formatter": "percent"},
                 ])
 
-                fig = plot_histogram(values, "Churn probability", "Predicted probability of churn / inactivity")
+                fig = plot_histogram(values, "Inactivity Risk", "Predicted probability of next-month inactivity")
                 st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
                 render_science_card(

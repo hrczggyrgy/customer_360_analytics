@@ -39,8 +39,19 @@ from .theme import (
 )
 
 from .scope import (
-    init_global_scope,
-    apply_global_scope,
+    get_scope,
+    get_scoped_customer_ids,
+    apply_scope_to_dataframe,
+    render_global_filter_bar,
+    render_sidebar,
+    ScopeApplicability,
+    RISK_THRESHOLDS,
+    PROPENSITY_THRESHOLDS,
+    VALUE_QUANTILES,
+    OPPORTUNITY_MATRIX_SPLITS,
+    get_risk_band,
+    get_propensity_band,
+    get_value_band_from_quantile,
 )
 
 from .components import (
@@ -136,8 +147,19 @@ __all__ = [
     "get_plotly_theme",
     "apply_plotly_theme",
     # Scope
-    "init_global_scope",
-    "apply_global_scope",
+    "get_scope",
+    "get_scoped_customer_ids",
+    "apply_scope_to_dataframe",
+    "render_global_filter_bar",
+    "render_sidebar",
+    "ScopeApplicability",
+    "RISK_THRESHOLDS",
+    "PROPENSITY_THRESHOLDS",
+    "VALUE_QUANTILES",
+    "OPPORTUNITY_MATRIX_SPLITS",
+    "get_risk_band",
+    "get_propensity_band",
+    "get_value_band_from_quantile",
     # Components
     "render_kpi_card",
     "render_kpi_row",

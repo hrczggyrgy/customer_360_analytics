@@ -13,8 +13,8 @@ from ..ui import (
     render_kpi_row,
     render_missing,
     render_audience_table,
-    apply_global_scope,
 )
+from ..ui.scope import apply_scope_to_dataframe
 from ..app_data import get_registry
 from ..app_formatting import format_currency, format_count, format_probability, format_score
 from ..ui.charts import (
@@ -39,7 +39,7 @@ def render() -> None:
     
     # Apply global scope
     if combined is not None:
-        combined = apply_global_scope(combined)
+        combined = apply_scope_to_dataframe(combined)
     
     # =============================================================================
     # COLUMN DETECTION
@@ -82,25 +82,74 @@ def render() -> None:
     # =============================================================================
     render_section_label("Capacity board")
     
-    # Get capacity from action_summary or infer
-    total_capacity = len(decision)
-    active_mask = ~decision[action_col].astype(str).str.startswith("monitor", na=False)
-    allocated = int(active_mask.sum())
-    remaining = total_capacity - allocated
-    utilization = allocated / total_capacity * 100 if total_capacity > 0 else 0
+    model_card = registry.load_model_card("decision_engine")
+    configured_capacity = 1000
+    action_capacities = {}
+    
+    if model_card and "capacity_constraints" in model_card:
+        cc = model_card["capacity_constraints"]
+        configured_capacity = cc.get("total", configured_capacity)
+        action_capacities = {k: v for k, v in cc.items() if k != "total"}
+    
+    if action_summary is not None:
+        action_col_summary = None
+        for c in ["final_action", "recommended_action", "action"]:
+            if c in action_summary.columns:
+                action_col_summary = c
+                break
+        customer_col_summary = None
+        for c in ["customers", "customer_count", "count"]:
+            if c in action_summary.columns:
+                customer_col_summary = c
+                break
+        
+        if action_col_summary and customer_col_summary:
+            allocated_by_action = action_summary.set_index(action_col_summary)[customer_col_summary].to_dict()
+        else:
+            allocated_by_action = {}
+    else:
+        allocated_by_action = decision[action_col].value_counts().to_dict()
+    
+    active_allocated = sum(v for k, v in allocated_by_action.items() 
+                          if not str(k).startswith("monitor"))
+    remaining = configured_capacity - active_allocated
+    utilization = active_allocated / configured_capacity * 100 if configured_capacity > 0 else 0
     
     cap_cols = st.columns(4)
     with cap_cols[0]:
-        st.metric("Total Capacity", f"{total_capacity:,}")
+        st.metric("Portfolio Capacity", f"{configured_capacity:,}")
     with cap_cols[1]:
-        st.metric("Allocated", f"{allocated:,}")
+        st.metric("Allocated", f"{active_allocated:,}")
     with cap_cols[2]:
         st.metric("Remaining", f"{remaining:,}")
     with cap_cols[3]:
         st.metric("Utilization", f"{utilization:.0f}%")
     
-    # Progress bar
-    st.progress(utilization / 100)
+    st.progress(min(utilization / 100, 1.0))
+    
+    if action_capacities:
+        st.markdown("#### Per-action capacity")
+        action_cap_cols = st.columns(len(action_capacities))
+        for (action, cap), col in zip(action_capacities.items(), action_cap_cols):
+            with col:
+                allocated = allocated_by_action.get(action, 0)
+                st.metric(
+                    action.replace("_", " ").title(),
+                    f"{allocated:,} / {cap:,}",
+                    f"{(cap - allocated):+,}"
+                )
+    
+    if combined is not None:
+        from ..ui.scope import get_scoped_customer_ids
+        scoped_ids = get_scoped_customer_ids()
+        scoped_allocated = sum(1 for cid in scoped_ids 
+                              if cid in decision[decision[action_col] != "monitor"]["Customer ID"].values)
+        st.caption(
+            f"Portfolio capacity: {configured_capacity:,}  |  "
+            f"Portfolio allocated: {active_allocated:,}  |  "
+            f"Scoped audience: {len(scoped_ids):,}  |  "
+            f"Scoped allocated: {scoped_allocated:,}"
+        )
     
     # =============================================================================
     # SECTION 2: ACTION ALLOCATION
@@ -148,7 +197,7 @@ def render() -> None:
     # =============================================================================
     # SECTION 3: OPPORTUNITY MATRIX
     # =============================================================================
-    render_section_label("Opportunity matrix — Value vs Risk vs Propensity")
+    render_section_label("Opportunity matrix — Value vs Risk (bubble size = Propensity)")
     
     if decision_clv and d_churn and d_next:
         plot_df = decision.dropna(subset=[decision_clv, d_churn, d_next, action_col]).copy()
@@ -271,8 +320,10 @@ def render() -> None:
     for col in display.columns:
         if col in [decision_clv]:
             display[col] = display[col].apply(format_currency)
-        elif col in [d_churn, d_next, "reactivation_probability", d_confidence]:
+        elif col in [d_churn, d_next, "reactivation_probability"]:
             display[col] = display[col].apply(format_probability)
+        elif col == d_confidence:
+            display[col] = display[col].apply(format_score)
         elif col == priority_col:
             display[col] = display[col].apply(format_score)
     

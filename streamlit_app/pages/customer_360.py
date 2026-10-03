@@ -106,9 +106,9 @@ def render() -> None:
     orders_value = safe_get(row, "orders", "invoice_count")
     
     render_customer_metric_row([
-        ("CLV", clv_value, "currency"),
-        ("Churn risk", churn_value, "probability"),
-        ("Next purchase", purchase_value, "probability"),
+        ("Predicted Future Value", clv_value, "currency"),
+        ("Inactivity Risk", churn_value, "probability"),
+        ("30d Purchase Propensity", purchase_value, "probability"),
         ("Revenue", revenue_value, "currency"),
         ("Orders", orders_value, "count"),
     ])
@@ -161,12 +161,12 @@ def render() -> None:
             ("CLV", ["clv_mean", "clv", "predicted_clv", "customer_clv"]),
             ("CLV lower", ["clv_lower", "clv_p10", "clv_lower_bound"]),
             ("CLV upper", ["clv_upper", "clv_p90", "clv_upper_bound"]),
-            ("Churn probability", ["churn_probability", "churn_prob", "prob_churn"]),
+            ("Inactivity Risk", ["churn_probability", "churn_prob", "prob_churn"]),
             ("Next-purchase probability", ["next_purchase_probability", "next_purchase_probability_30d", "purchase_probability_30d"]),
             ("Reactivation probability", ["reactivation_probability"]),
             ("Expected days to next purchase", ["expected_days_to_next_purchase"]),
             ("Recency pressure", ["recency_pressure"]),
-            ("Decision confidence", ["decision_confidence"]),
+            ("Policy Score", ["decision_confidence"]),
         ]
         
         for label, candidates in field_map:
@@ -178,8 +178,10 @@ def render() -> None:
             if value is None:
                 continue
             
-            if "probability" in label.lower() or "confidence" in label.lower():
+            if "probability" in label.lower():
                 display = format_probability(value)
+            elif "score" in label.lower():
+                display = format_score(value)
             elif "clv" in label.lower():
                 display = format_currency(value)
             elif "days" in label.lower():
@@ -195,7 +197,7 @@ def render() -> None:
         render_science_card(
             "How to read this customer",
             "The dashboard intentionally separates **value**, **risk**, and **propensity**. "
-            "A high-CLV customer is not automatically a good intervention target; "
+            "A high-value customer is not automatically a good intervention target; "
             "the action layer looks for a commercially meaningful signal and a "
             "sufficiently strong model-confidence context."
         )

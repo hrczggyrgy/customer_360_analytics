@@ -16,6 +16,7 @@ from ..ui import (
     render_action_summary_table,
     render_formatted_dataframe,
 )
+from ..ui.scope import apply_scope_to_dataframe
 from ..app_data import get_registry
 from ..app_formatting import format_currency, format_probability, format_count
 from ..ui.charts import (
@@ -125,8 +126,15 @@ def render() -> None:
     
     display = targets[preferred_columns].copy()
     
-    # Use formatted dataframe
-    render_formatted_dataframe(display)
+    render_formatted_dataframe(
+        display,
+        column_config={
+            "decision_confidence": st.column_config.NumberColumn(
+                "Policy Score",
+                format="%.2f",
+            )
+        }
+    )
     
     render_science_card(
         "What this engine does — and does not do",

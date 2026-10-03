@@ -15,8 +15,8 @@ from ..ui import (
     render_insight,
     render_insight_row,
     render_missing,
-    apply_global_scope,
 )
+from ..ui.scope import apply_scope_to_dataframe
 from ..app_data import get_registry
 from ..app_formatting import format_currency, format_probability, format_percent, format_count
 from ..ui.charts import (
@@ -64,7 +64,7 @@ def render() -> None:
     
     # Apply global scope
     if combined is not None:
-        combined = apply_global_scope(combined)
+        combined = apply_scope_to_dataframe(combined)
     
     # =============================================================================
     # SECTION 1: VALUE DISTRIBUTION
@@ -310,7 +310,7 @@ def render() -> None:
                 label="RISK-VALUE CORRELATION",
                 headline=f"Inactivity risk increases with predicted value (r={corr:.2f})",
                 detail="Higher-value customers show elevated inactivity risk — value protection is critical",
-                evidence=f"Pearson correlation between CLV proxy and churn probability across {len(plot_df):,} customers",
+                evidence=f"Pearson correlation between CLV proxy and inactivity risk across {len(plot_df):,} customers",
                 severity="high",
             )
         elif corr < -0.1:
@@ -318,7 +318,7 @@ def render() -> None:
                 label="RISK-VALUE CORRELATION",
                 headline=f"Inactivity risk decreases with predicted value (r={corr:.2f})",
                 detail="Higher-value customers are more stable — retention focus on mid-value segments",
-                evidence=f"Pearson correlation between CLV proxy and churn probability across {len(plot_df):,} customers",
+                evidence=f"Pearson correlation between CLV proxy and inactivity risk across {len(plot_df):,} customers",
                 severity="medium",
             )
     else:
