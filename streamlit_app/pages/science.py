@@ -14,6 +14,7 @@ from ..ui import (
     render_kpi_row,
     render_missing,
 )
+from ..ui.scope import apply_scope_to_dataframe, ScopeApplicability
 from ..app_data import get_registry
 from ..app_formatting import format_count
 

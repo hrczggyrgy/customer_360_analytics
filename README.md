@@ -55,11 +55,13 @@ End-to-end retail customer intelligence pipeline for the **Online Retail II** da
 - **Validation gates**: Schema, invoice preservation, financial reconciliation, temporal leakage checks
 
 ### 📊 Streamlit Dashboard (V2 Modular)
-- **9 pages**: Executive, Customer 360, Segmentation, Cohorts, Predictive Value, Retention & Next Purchase, Recommendations, Decision Engine, Methodology
+- **8 workspaces**: Strategy, Customers, Value & Retention, Segments, Products & Baskets, Personalisation, Activation, Science & Governance
 - **Config-driven**: All paths via `config/project.yaml` → `ArtifactRegistry`
 - **Deep linking**: `?customer_id=12345` for direct customer profile access
 - **Cross-run consistency**: Detects mixed run_ids, data_versions, code_versions
 - **Semantic formatters**: 11 explicit formatters for 100+ columns (currency, probability, percent, ratio, count, date, month, duration, score)
+- **Unified scope system**: Global filters (country, segment, lifecycle, value band, risk band, RFM segment, priority tier) with temporal analysis date selector
+- **Scientific terminology**: CLV → "Predicted Future Value", Churn → "Inactivity Risk", Decision confidence → "Policy Score"
 
 ## Quick Start
 
@@ -152,23 +154,23 @@ marketing_science/
 │   └── reactivation_model.py
 ├── streamlit_app/              # Streamlit dashboard (V2 modular)
 │   ├── __init__.py
-│   ├── app.py                  # Router (~322 lines)
+│   ├── app.py                  # Router (~295 lines)
 │   ├── app_config.py           # Central config loader
 │   ├── app_data.py             # ArtifactRegistry (10 module schemas)
 │   ├── app_formatting.py       # 11 semantic formatters + 100+ column map
 │   ├── app_components.py       # Reusable UI components
 │   ├── app_charts.py           # Consistent Plotly charts
-│   └── pages/                  # 9 page modules
+│   ├── ui/                     # Design system (tokens, theme, components, charts, scope)
+│   └── pages/                  # 8 workspace modules
 │       ├── __init__.py
-│       ├── executive.py
-│       ├── customer_360.py
-│       ├── segmentation.py
-│       ├── cohorts.py
-│       ├── predictive.py
-│       ├── retention.py
-│       ├── recommendations.py
-│       ├── decision_engine.py
-│       └── methodology.py
+│       ├── strategy.py
+│       ├── customers.py
+│       ├── value_retention.py
+│       ├── segments.py
+│       ├── products_baskets.py
+│       ├── personalisation.py
+│       ├── activation.py
+│       └── science.py
 ├── tests/
 │   ├── test_app.py             # 22 Streamlit integration tests
 │   └── test_retail_ds.py       # 35 retail_ds unit tests
@@ -223,7 +225,8 @@ marketing_science/
 - Next-purchase: 7/30/60-day targets via asof join
 
 ### Test Suite
-**100 tests passing** (35 retail_ds + 22 app + 19 recommendation + 12 decision + 12 artifact contracts)
+**27 Streamlit app tests passing** (formatter, app data, component, integration, data validation tests)
+**3 retail_ds decision engine tests passing** (capacity allocation tests)
 
 ## Configuration
 

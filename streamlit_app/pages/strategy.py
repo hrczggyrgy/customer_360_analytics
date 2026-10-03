@@ -16,8 +16,8 @@ from ..ui import (
     render_insight_row,
     render_missing,
     render_audience_table,
-    apply_global_scope,
 )
+from ..ui.scope import get_scoped_customer_ids, apply_scope_to_dataframe, ScopeApplicability
 from ..app_data import get_registry
 from ..app_formatting import format_currency, format_probability, format_percent, format_count, auto_format
 from ..ui.charts import (
@@ -44,8 +44,7 @@ def render() -> None:
         render_missing("Run customer_360.py to populate the strategy view.")
         st.stop()
     
-    # Apply global scope
-    combined = apply_global_scope(combined)
+    combined = apply_scope_to_dataframe(combined)
     
     # =============================================================================
     # SECTION 1: PORTFOLIO HEADLINE KPIs
@@ -110,21 +109,31 @@ def render() -> None:
     # =============================================================================
     render_section_label("What changed? — Customer movement")
     
-    if "lifecycle_state" in combined.columns and "customer_state" in combined.columns:
-        # Current vs prior lifecycle comparison
-        current_lifecycle = combined["lifecycle_state"].value_counts().reset_index()
-        current_lifecycle.columns = ["Lifecycle", "Customers"]
+    transition = registry.load_dataframe("segmentation", "segment_transition_matrix.csv")
+    
+    if transition is not None and "from_segment" in transition.columns and "to_segment" in transition.columns:
+        from_col = "from_segment"
+        to_col = "to_segment"
+        count_col = "customers" if "customers" in transition.columns else "count"
         
-        prior_lifecycle = combined["customer_state"].value_counts().reset_index()
-        prior_lifecycle.columns = ["Lifecycle", "Customers"]
+        st.markdown("#### Segment transition matrix (prior → current)")
         
-        # Merge for comparison
-        movement = current_lifecycle.merge(prior_lifecycle, on="Lifecycle", how="outer", suffixes=("_current", "_prior")).fillna(0)
-        movement["Net change"] = movement["Customers_current"] - movement["Customers_prior"]
+        from ..ui.charts import plot_transition_matrix
+        fig = plot_transition_matrix(
+            transition,
+            from_col=from_col,
+            to_col=to_col,
+            count_col=count_col,
+            title="Segment Transitions",
+            normalize="row_pct",
+        )
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
         
-        left, right = st.columns(2)
-        
-        with left:
+        if "lifecycle_state" in combined.columns:
+            st.markdown("#### Current lifecycle composition")
+            current_lifecycle = combined["lifecycle_state"].value_counts().reset_index()
+            current_lifecycle.columns = ["Lifecycle", "Customers"]
+            
             fig = plot_action_allocation(
                 current_lifecycle,
                 action_col="Lifecycle",
@@ -132,22 +141,19 @@ def render() -> None:
                 title="Current lifecycle distribution",
             )
             st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+    elif "lifecycle_state" in combined.columns:
+        st.info("True temporal transition data not available. Showing current lifecycle composition.")
+        st.markdown("#### Current lifecycle composition")
+        current_lifecycle = combined["lifecycle_state"].value_counts().reset_index()
+        current_lifecycle.columns = ["Lifecycle", "Customers"]
         
-        with right:
-            fig = plot_action_allocation(
-                prior_lifecycle,
-                action_col="Lifecycle",
-                count_col="Customers",
-                title="Prior lifecycle distribution",
-            )
-            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
-        
-        # Net movement table
-        st.markdown("#### Net customer movement")
-        display_movement = movement[["Lifecycle", "Customers_current", "Customers_prior", "Net change"]].copy()
-        display_movement.columns = ["Lifecycle", "Current", "Prior", "Net change"]
-        display_movement = display_movement.sort_values("Net change", ascending=False)
-        st.dataframe(display_movement, use_container_width=True, hide_index=True)
+        fig = plot_action_allocation(
+            current_lifecycle,
+            action_col="Lifecycle",
+            count_col="Customers",
+            title="Current lifecycle distribution",
+        )
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
     else:
         render_missing("Lifecycle state data not available for movement analysis.")
     
@@ -203,7 +209,7 @@ def render() -> None:
     
     # Prepare data for opportunity matrix
     if decision is not None:
-        plot_df = apply_global_scope(decision)
+        plot_df = apply_scope_to_dataframe(decision)
         
         # Ensure required columns
         req_cols = ["clv_mean", "churn_probability", "next_purchase_30d_probability", "recommended_action_capped"]
@@ -224,10 +230,10 @@ def render() -> None:
                 y_label="Inactivity risk",
                 title="Opportunity Matrix: Propensity vs Risk (bubble size = Predicted Future Value)",
                 quadrant_labels={
-                    "top_right": "PROTECT\nHigh value, high risk",
-                    "top_left": "NURTURE\nLower value, high risk",
-                    "bottom_right": "GROW\nHigh value, low risk",
-                    "bottom_left": "ACCELERATE\nLower value, low risk",
+                    "top_right": "PROTECT\nHigh propensity, high risk",
+                    "top_left": "REACT / NURTURE\nLow propensity, high risk",
+                    "bottom_right": "GROW / ACCELERATE\nHigh propensity, low risk",
+                    "bottom_left": "DEVELOP\nLow propensity, low risk",
                 },
                 hover_cols=["Customer ID", "segment_name", "priority_score"],
             )
@@ -239,19 +245,19 @@ def render() -> None:
             y_med = plot_df["churn_probability"].median()
             
             quadrants = {
-                "PROTECT (High value, high risk)": plot_df[
+                "PROTECT (High propensity, high risk)": plot_df[
                     (plot_df["next_purchase_30d_probability"] >= x_med) & 
                     (plot_df["churn_probability"] >= y_med)
                 ],
-                "GROW (High value, low risk)": plot_df[
+                "GROW / ACCELERATE (High propensity, low risk)": plot_df[
                     (plot_df["next_purchase_30d_probability"] >= x_med) & 
                     (plot_df["churn_probability"] < y_med)
                 ],
-                "NURTURE (Lower value, high risk)": plot_df[
+                "REACT / NURTURE (Low propensity, high risk)": plot_df[
                     (plot_df["next_purchase_30d_probability"] < x_med) & 
                     (plot_df["churn_probability"] >= y_med)
                 ],
-                "ACCELERATE (Lower value, low risk)": plot_df[
+                "DEVELOP (Low propensity, low risk)": plot_df[
                     (plot_df["next_purchase_30d_probability"] < x_med) & 
                     (plot_df["churn_probability"] < y_med)
                 ],
@@ -274,7 +280,7 @@ def render() -> None:
     render_section_label("Priority opportunities")
     
     if decision is not None:
-        plot_df = apply_global_scope(decision)
+        plot_df = apply_scope_to_dataframe(decision)
         
         # Build opportunity cohorts
         opportunities = []
@@ -393,7 +399,7 @@ def render() -> None:
                 "label": "RISK CONCENTRATION",
                 "headline": f"Inactivity risk concentrated in '{top_seg}' segment ({format_probability(top_risk)})",
                 "detail": f"Segment average risk ranges from {format_probability(seg_risk.min())} to {format_probability(seg_risk.max())}",
-                "evidence": f"Churn probability by behavioral segment (n={len(seg_risk)} segments)",
+                "evidence": f"Inactivity risk by behavioral segment (n={len(seg_risk)} segments)",
                 "severity": "high",
             })
     

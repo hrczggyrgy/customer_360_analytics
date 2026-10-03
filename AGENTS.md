@@ -8,7 +8,7 @@ End-to-end retail customer intelligence pipeline for the **Online Retail II** da
 Raw Excel → data_quality.py → customer_360.py → customer_segmentation.py
         → cohort_analysis.py → clv_analysis.py → churn_next_purchase.py
         → recommendation_engine.py → decision_engine.py
-        → Streamlit Dashboard (streamlit_app/app.py + 9 pages)
+        → Streamlit Dashboard (streamlit_app/app.py + 8 workspace pages)
 ```
 
 ---
@@ -73,12 +73,13 @@ marketing_science/
 │   ├── recommendation_engine.py, decision_engine.py
 │   ├── product_analytics.py, reactivation_model.py
 ├── streamlit_app/                 # Modular Streamlit dashboard (V2)
-│   ├── app.py (~322 lines router)
+│   ├── app.py (~295 lines router)
 │   ├── app_config.py, app_data.py, app_formatting.py
 │   ├── app_components.py, app_charts.py
-│   └── pages/ (9 page modules)
+│   ├── ui/                        # Design system (tokens, theme, components, charts, scope)
+│   └── pages/ (8 workspace modules)
 ├── tests/
-│   ├── test_app.py (22 Streamlit integration tests)
+│   ├── test_app.py (27 Streamlit integration tests)
 │   └── test_retail_ds.py (35 retail_ds unit tests)
 ├── pyproject.toml, requirements.txt
 └── README.md
@@ -116,6 +117,11 @@ Run: `python -m pytest -p no:timeout -p no:zarr`
 
 ### pytest-timeout Issue
 Plugin incompatible with pytest 7.4.4. Always run with `-p no:timeout -p no:zarr`.
+
+### Test Results
+- **27 Streamlit app tests passing** (formatter, app data, component, integration, data validation tests)
+- **3 retail_ds decision engine tests passing** (capacity allocation tests)
+- Note: Some retail_ds feature leakage tests have pre-existing environment issues (path handling)
 
 ---
 

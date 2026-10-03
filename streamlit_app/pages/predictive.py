@@ -15,6 +15,7 @@ from ..ui import (
     render_kpi_row,
     render_missing,
 )
+from ..ui.scope import apply_scope_to_dataframe
 from ..app_data import get_registry
 from ..app_formatting import format_currency, format_count
 from ..ui.charts import (

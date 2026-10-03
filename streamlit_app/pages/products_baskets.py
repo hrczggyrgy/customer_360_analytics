@@ -13,8 +13,8 @@ from ..ui import (
     render_kpi_row,
     render_missing,
     render_audience_table,
-    apply_global_scope,
 )
+from ..ui.scope import apply_scope_to_dataframe
 from ..app_data import get_registry
 from ..app_formatting import format_currency, format_count, format_probability, format_ratio
 from ..ui.charts import (
@@ -42,7 +42,7 @@ def render() -> None:
     
     # Apply global scope
     if combined is not None:
-        combined = apply_global_scope(combined)
+        combined = apply_scope_to_dataframe(combined)
     
     # =============================================================================
     # SECTION 1: PRODUCT PORTFOLIO

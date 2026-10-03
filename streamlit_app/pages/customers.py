@@ -18,8 +18,8 @@ from ..ui import (
     render_peer_benchmark,
     render_audience_table,
     render_missing,
-    apply_global_scope,
 )
+from ..ui.scope import apply_scope_to_dataframe
 from ..app_data import get_registry
 from ..app_formatting import (
     format_currency,
@@ -54,7 +54,7 @@ def render() -> None:
         st.stop()
     
     # Apply global scope
-    customer_df = apply_global_scope(customer_df)
+    customer_df = apply_scope_to_dataframe(customer_df)
     
     id_col = "Customer ID"
     
@@ -210,7 +210,7 @@ def render() -> None:
             ("Reactivation probability", ["reactivation_probability"]),
             ("Expected days to next purchase", ["expected_days_to_next_purchase"]),
             ("Recency pressure", ["recency_pressure"]),
-            ("Decision confidence", ["decision_confidence"]),
+            ("Policy Score", ["decision_confidence"]),
             ("Recommended action", ["recommended_action_capped", "final_action", "recommended_action"]),
             ("Action reason", ["action_reason"]),
         ]
