@@ -193,6 +193,8 @@ def prepare_model_data(
         "month_end_date", "days_to_next_purchase",
         "last_invoice_date_month", "last_purchase_date_asof_month", "month_end_proxy",
         "inactive_indicator", "inactive_run_counter", "last_active_counter",
+        "next_active", "next_net_revenue", "reactivation_event", "churn_transition",
+        "next_invoice_date", "next_purchase_7d", "next_purchase_30d", "next_purchase_60d",
     }
     feature_cols = [
         c for c in panel.columns 
@@ -236,12 +238,16 @@ def train_calibrated_model(
     )
     
     # Use CalibratedClassifierCV for proper calibration
+    # Use cv=2 (2-fold CV) instead of 'prefit' for compatibility
     calibrated_model = CalibratedClassifierCV(
         base_model, 
         method=calibration_method, 
-        cv="prefit"
+        cv=2,
+        n_jobs=-1
     )
     
+    # Fit base model on training data, then calibrate on validation data
+    # We need to manually fit base_model first, then pass to CalibratedClassifierCV
     base_model.fit(X_train_t, y_train)
     calibrated_model.fit(X_val_t, y_val)
     
@@ -726,6 +732,16 @@ def main() -> None:
             "validation": churn_metrics,
             "test": churn_test_metrics,
             "features": feature_cols,
+            "calibration": {
+                "validation": {
+                    "fraction_of_positives": frac_pos_val.tolist() if 'frac_pos_val' in locals() else None,
+                    "mean_predicted_value": mean_pred_val.tolist() if 'mean_pred_val' in locals() else None,
+                },
+                "test": {
+                    "fraction_of_positives": frac_pos_test.tolist() if 'frac_pos_test' in locals() else None,
+                    "mean_predicted_value": mean_pred_test.tolist() if 'mean_pred_test' in locals() else None,
+                },
+            },
         },
         "cox_ph_benchmark": cox_metrics,
         "next_purchase": {str(h): v["metrics"] for h, v in next_purchase_results.items()},

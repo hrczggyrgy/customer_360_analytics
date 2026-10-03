@@ -189,9 +189,11 @@ def render() -> None:
     with col2:
         # Segment filter
         segment_filter = "All"
-        if combined is not None and "segment_name" in combined.columns:
-            segments = ["All"] + sorted(combined["segment_name"].dropna().unique().tolist())
-            segment_filter = st.selectbox("Segment", segments, key="rec_segment_filter")
+        if combined is not None:
+            seg_col = "hdbscan_segment" if "hdbscan_segment" in combined.columns else "segment_name"
+            if seg_col in combined.columns:
+                segments = ["All"] + sorted(combined[seg_col].dropna().unique().tolist())
+                segment_filter = st.selectbox("Segment", segments, key="rec_segment_filter")
     
     with col3:
         # Reason filter
@@ -209,8 +211,10 @@ def render() -> None:
         filtered_recs = filtered_recs[filtered_recs["Customer ID"] == selected_customer]
     
     if segment_filter != "All" and combined is not None:
-        seg_customers = combined[combined["segment_name"] == segment_filter]["Customer ID"].unique()
-        filtered_recs = filtered_recs[filtered_recs["Customer ID"].isin(seg_customers)]
+        seg_col = "hdbscan_segment" if "hdbscan_segment" in combined.columns else "segment_name"
+        if seg_col in combined.columns:
+            seg_customers = combined[combined[seg_col] == segment_filter]["Customer ID"].unique()
+            filtered_recs = filtered_recs[filtered_recs["Customer ID"].isin(seg_customers)]
     
     if reason_filter != "All":
         filtered_recs = filtered_recs[filtered_recs["reason"] == reason_filter]
@@ -232,7 +236,7 @@ def render() -> None:
         
         # Display columns
         display_cols = ["Customer ID", "recommended_product", "Description", "Product Role", "rank", "score", "reason"]
-        for c in ["supporting_products", "association_lift", "Avg Price", "Total Revenue"]:
+        for c in ["support", "association_lift", "Avg Price", "Total Revenue"]:
             if c in filtered_recs.columns:
                 display_cols.append(c)
         

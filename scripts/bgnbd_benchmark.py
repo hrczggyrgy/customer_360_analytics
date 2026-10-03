@@ -139,13 +139,13 @@ def prepare_rfm_data(
 
 def fit_bgnbd(
     rfm_train: pd.DataFrame,
-    penalty_coef: float = 0.0,
+    penalizer_coef: float = 0.0,
 ) -> "BetaGeoFitter":
     """Fit BG/NBD model on training data."""
     if not LIFETIMES_AVAILABLE:
         raise ImportError("lifetimes package not installed. Install with: pip install lifetimes")
     
-    bgf = BetaGeoFitter(penalty_coef=penalty_coef)
+    bgf = BetaGeoFitter(penalizer_coef=penalizer_coef)
     bgf.fit(rfm_train["frequency"], rfm_train["recency"], rfm_train["T"])
     
     LOGGER.info(f"BG/NBD fitted: params = {bgf._unload_params()}")
@@ -320,7 +320,7 @@ def main() -> None:
     bgf = fit_bgnbd(rfm_train)
     
     # Save model parameters
-    params = bgf._unload_params()
+    params = bgf.params_
     with open(output_dir / "bgnbd_params.json", "w") as f:
         json.dump({k: float(v) for k, v in params.items()}, f, indent=2)
 
@@ -355,7 +355,7 @@ def main() -> None:
         "horizon_days": args.horizon_days,
         "annual_discount_rate": args.annual_discount_rate,
         "margin_rate": args.margin_rate,
-        "params": {k: float(v) for k, v in params.items()},
+        "params": {k: float(v) for k, v in bgf.params_.items()},
         "training_customers": len(rfm_train),
         "training_stats": {
             "mean_frequency": float(rfm_train["frequency"].mean()),
@@ -374,7 +374,6 @@ def main() -> None:
     with open(output_dir / "model_card.json", "w") as f:
         json.dump(model_card, f, indent=2, default=str)
 
-    import pandas as pd
     manifest = {
         "run_id": getattr(args, "run_id", None),
         "config_hash": config.config_hash,

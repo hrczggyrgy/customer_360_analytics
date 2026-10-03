@@ -217,9 +217,11 @@ def render() -> None:
     
     with col3:
         segment_filter = "All"
-        if combined is not None and "segment_name" in combined.columns:
-            segments = ["All"] + sorted(combined["segment_name"].dropna().unique().tolist())
-            segment_filter = st.selectbox("Segment", segments, key="activation_segment_filter")
+        if combined is not None:
+            seg_col = "hdbscan_segment" if "hdbscan_segment" in combined.columns else "segment_name"
+            if seg_col in combined.columns:
+                segments = ["All"] + sorted(combined[seg_col].dropna().unique().tolist())
+                segment_filter = st.selectbox("Segment", segments, key="activation_segment_filter")
     
     with col4:
         risk_filter = st.selectbox(
@@ -235,8 +237,10 @@ def render() -> None:
         filtered = filtered[filtered[action_col] == action_filter]
     
     if segment_filter != "All" and combined is not None:
-        seg_customers = combined[combined["segment_name"] == segment_filter]["Customer ID"].unique()
-        filtered = filtered[filtered[d_id].isin(seg_customers)]
+        seg_col = "hdbscan_segment" if "hdbscan_segment" in combined.columns else "segment_name"
+        if seg_col in combined.columns:
+            seg_customers = combined[combined[seg_col] == segment_filter]["Customer ID"].unique()
+            filtered = filtered[filtered[d_id].isin(seg_customers)]
     
     if risk_filter != "All" and d_churn:
         churn_vals = pd.to_numeric(filtered[d_churn], errors="coerce")
@@ -296,7 +300,7 @@ def render() -> None:
             st.metric("Suppressed", f"{suppressed_count:,}")
         
         with col3:
-            capacity_excluded = len(decision) - eligible_count if d_eligible else "N/A"
+            capacity_excluded = len(decision) - (int(decision[d_eligible].sum()) if d_eligible else 0)
             st.metric("Capacity excluded", f"{capacity_excluded:,}")
         
         if d_suppressed and d_suppression_reason:
@@ -307,7 +311,15 @@ def render() -> None:
                 reason_counts.columns = ["Suppression Reason", "Count"]
                 st.dataframe(reason_counts, use_container_width=True, hide_index=True)
     else:
-        render_missing("Eligibility/suppression fields not available in decision output.")
+        # Show capacity-based eligibility instead
+        col1, col2 = st.columns(2)
+        with col1:
+            active_mask = ~decision[action_col].astype(str).str.startswith("monitor", na=False)
+            st.metric("Active (allocated)", f"{int(active_mask.sum()):,}")
+        with col2:
+            monitor_mask = decision[action_col].astype(str).str.startswith("monitor", na=False)
+            st.metric("Monitor (not allocated)", f"{int(monitor_mask.sum()):,}")
+        st.caption("Eligibility/suppression fields not in decision output. Showing capacity-based allocation instead.")
     
     # =============================================================================
     # SECTION 6: EXPORT

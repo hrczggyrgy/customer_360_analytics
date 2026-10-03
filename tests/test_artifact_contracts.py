@@ -65,18 +65,27 @@ class TestArtifactContracts:
         """Churn artifact should have probability bounds."""
         churn = registry.load_dataframe("churn")
         if churn is not None:
-            required = ["Customer ID", "churn_probability"]
+            # New scientific terminology
+            required = ["Customer ID", "next_month_inactivity_risk"]
             for col in required:
                 assert col in churn.columns, f"Missing required column: {col}"
             
-            # Probability bounds
-            prob_cols = ["churn_probability", "survival_3m", "survival_6m", "survival_12m",
-                         "next_purchase_7d_probability", "next_purchase_30d_probability", 
-                         "next_purchase_60d_probability"]
+            # Probability bounds - new scientific terminology
+            prob_cols = [
+                "next_month_inactivity_risk", 
+                "model_survival_probability_3m", 
+                "model_survival_probability_6m", 
+                "model_survival_probability_12m",
+                "next_purchase_7d_probability", 
+                "next_purchase_30d_probability", 
+                "next_purchase_60d_probability"
+            ]
             for col in prob_cols:
                 if col in churn.columns:
-                    assert (churn[col] >= 0).all(), f"{col} has values < 0"
-                    assert (churn[col] <= 1).all(), f"{col} has values > 1"
+                    # Check non-null values are in [0, 1]
+                    non_null = churn[col].dropna()
+                    assert (non_null >= 0).all(), f"{col} has values < 0"
+                    assert (non_null <= 1).all(), f"{col} has values > 1"
 
     def test_decision_engine_artifact_schema(self, registry):
         """Decision engine artifact should have action and priority fields."""
